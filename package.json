@@ -1,0 +1,16 @@
+{
+  "name": "khelazone-unified",
+  "version": "1.0.0",
+  "scripts": {
+    "install-all": "cd server && npm install && cd ../client && npm install",
+    "build": "cd client && npm run build",
+    "start": "node server/index.js",
+    "dev": "concurrently \"npm run dev-server\" \"npm run dev-client\"",
+    "dev-server": "cd server && node index.js",
+    "dev-client": "cd client && npm run dev",
+    "render-postbuild": "npm run install-all && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

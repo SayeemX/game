@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: khelazone-api
+    env: node
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CLIENT_URL
+        value: https://khelazone.onrender.com # Change this to your actual client URL
+      - key: PORT
+        value: 10000
+
+  - type: web
+    name: khelazone-client
+    env: static
+    buildCommand: cd client && npm install && npm run build
+    staticPublishPath: ./client/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://khelazone-api.onrender.com/api # Change this to your actual API URL
