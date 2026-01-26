@@ -19,6 +19,7 @@ module.exports = function(req, res, next) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     // We expect { user: { id: "..." } } based on auth routes
     req.user = decoded.user || decoded;
+    req.userId = req.user.id || req.user.user?.id;
     next();
   } catch (err) {
     res.status(401).json({ message: 'Token is not valid' });
