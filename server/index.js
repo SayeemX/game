@@ -62,8 +62,8 @@ app.get('/health', (req, res) => {
 // Production Serving
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));
-  //app.get('*', (req, res) => {
-  app.get('/:path*?', (req, res) => {
+  app.get('*', (req, res) => {
+  //app.get('/:path*?', (req, res) => {
   //app.get('/(.*)', (req, res) => {
     res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
   });
