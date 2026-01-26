@@ -18,7 +18,7 @@ const io = socketIo(server, {
 
 // Middleware
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: false, // Disable for development/simplicity, enable in production
 }));
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
@@ -45,7 +45,9 @@ app.use('/api/games', require('./routes/games'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/admin', require('./routes/admin'));
 
-// Basic socket setup
+// Socket.io setup
+// require('./socket')(io); // Will create this next
+// For now, inline basic socket setup until socket.js is ready
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   socket.on('disconnect', () => console.log('User disconnected:', socket.id));
@@ -56,18 +58,17 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date() });
 });
 
-// API check
-app.get('/api', (req, res) => {
-  res.json({ message: 'KhelaZone API', version: '1.0.0' });
-});
-
-// Production Serving - FIXED ROUTE
+// Production Serving
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));
   
-  // Fixed: Use proper wildcard pattern
-  app.get('*', (req, res) => {
-    res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
+  // Use a middleware function to catch all remaining requests
+  app.use((req, res, next) => {
+    // Only handle GET requests for the SPA fallback
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      return res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
+    }
+    next();
   });
 }
 
