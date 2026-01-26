@@ -16,7 +16,7 @@ module.exports = function(req, res, next) {
 
   // Verify token
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secretKey');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     // We expect { user: { id: "..." } } based on auth routes
     req.user = decoded.user || decoded;
     next();
