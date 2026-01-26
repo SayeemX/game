@@ -42,6 +42,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/user', require('./routes/user'));
 app.use('/api/spin', require('./routes/spin'));
 app.use('/api/games', require('./routes/games'));
+app.use('/api/game', require('./routes/game'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/admin', require('./routes/admin'));
 
@@ -61,7 +62,9 @@ app.get('/health', (req, res) => {
 // Production Serving
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));
-  app.get('/:path*', (req, res) => {
+  //app.get('*', (req, res) => {
+  app.get('/:path*?', (req, res) => {
+  //app.get('/(.*)', (req, res) => {
     res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
   });
 }
