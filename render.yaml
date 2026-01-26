@@ -1,10 +1,9 @@
 services:
   - type: web
-    name: SayeemX GIFT
+    name: sayeemx
     env: node
     plan: free
-    # Combined build command: install all and build client
-    buildCommand: npm run install-all && npm run build
+    buildCommand: cd server && npm install && cd ../client && npm install --include=dev && npm run build
     # Start the server from the root
     startCommand: npm start
     envVars:
