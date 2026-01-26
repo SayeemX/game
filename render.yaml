@@ -1,10 +1,12 @@
 services:
   - type: web
-    name: sayeemxgame-api
+    name: SayeemX GIFT
     env: node
     plan: free
-    buildCommand: cd server && npm install
-    startCommand: cd server && node index.js
+    # Combined build command: install all and build client
+    buildCommand: npm run install-all && npm run build
+    # Start the server from the root
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
@@ -13,15 +15,8 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CLIENT_URL
-        value: https://sayeemx.onrender.com # Change this to your actual client URL
+        value: https://sayeemx.onrender.com # Update this after first deployment
       - key: PORT
         value: 10000
-
-  - type: web
-    name: sayeemx-client
-    env: static
-    buildCommand: cd client && npm install && npm run build
-    staticPublishPath: ./client/dist
-    envVars:
       - key: VITE_API_URL
-        value: https://sayeemx-api.onrender.com/api # Change this to your actual API URL
+        value: /api # This tells the client to use relative paths (same domain)
