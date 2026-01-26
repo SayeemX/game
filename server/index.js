@@ -62,9 +62,10 @@ app.get('/health', (req, res) => {
 // Production Serving
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));
-  app.get('*', (req, res) => {
-  //app.get('/:path*?', (req, res) => {
-  //app.get('/(.*)', (req, res) => {
+  
+  // FIX: Use a valid wildcard pattern that works with path-to-regexp
+  // The correct pattern for catch-all in Express 5 with path-to-regexp is:
+  app.get('/*', (req, res) => {
     res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
   });
 }
