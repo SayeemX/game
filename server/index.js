@@ -18,7 +18,7 @@ const io = socketIo(server, {
 
 // Middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Disable for development/simplicity, enable in production
+  contentSecurityPolicy: false,
 }));
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
@@ -42,13 +42,10 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/user', require('./routes/user'));
 app.use('/api/spin', require('./routes/spin'));
 app.use('/api/games', require('./routes/games'));
-app.use('/api/game', require('./routes/game'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/admin', require('./routes/admin'));
 
-// Socket.io setup
-// require('./socket')(io); // Will create this next
-// For now, inline basic socket setup until socket.js is ready
+// Basic socket setup
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   socket.on('disconnect', () => console.log('User disconnected:', socket.id));
@@ -59,13 +56,17 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date() });
 });
 
-// Production Serving
+// API check
+app.get('/api', (req, res) => {
+  res.json({ message: 'KhelaZone API', version: '1.0.0' });
+});
+
+// Production Serving - FIXED ROUTE
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));
   
-  // FIX: Use a valid wildcard pattern that works with path-to-regexp
-  // The correct pattern for catch-all in Express 5 with path-to-regexp is:
-  app.get('/*', (req, res) => {
+  // Fixed: Use proper wildcard pattern
+  app.get('*', (req, res) => {
     res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
   });
 }
