@@ -62,13 +62,13 @@ app.get('/health', (req, res) => {
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));
   
-  // Use a middleware function to catch all remaining requests
-  app.use((req, res, next) => {
-    // Only handle GET requests for the SPA fallback
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      return res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
+  // SPA Fallback: Serve index.html for all non-API GET requests
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.resolve(__dirname, '../client', 'dist', 'index.html'));
+    } else {
+      res.status(404).json({ error: 'API route not found' });
     }
-    next();
   });
 }
 
