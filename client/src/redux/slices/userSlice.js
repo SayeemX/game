@@ -146,5 +146,5 @@ const userSlice = createSlice({
   }
 });
 
-export const { logout, updateBalance, awardPrize, setUserData } = userSlice.actions;
+export const { logout, updateBalance, awardPrize, setUserData, updateWallet } = userSlice.actions;
 export default userSlice.reducer;
