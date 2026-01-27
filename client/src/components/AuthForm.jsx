@@ -73,9 +73,9 @@ const AuthForm = ({ mode = 'login' }) => {
                 <input
                   type="email"
                   placeholder="EMAIL ADDRESS"
-                  className="w-full pl-12 pr-4 py-4 rounded-2xl bg-black border border-gray-800 text-white placeholder:text-gray-700 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none transition font-bold text-sm uppercase tracking-wider"
+                  className="w-full pl-12 pr-4 py-4 rounded-2xl bg-black border border-gray-800 text-white placeholder:text-gray-700 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none transition font-bold text-sm tracking-wider"
                   value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value.toLowerCase() })}
                   required
                 />
               </div>
