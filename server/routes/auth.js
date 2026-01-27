@@ -11,14 +11,19 @@ router.post('/register', async (req, res) => {
     let user = await User.findOne({ $or: [{ username }, { email }] });
     if (user) return res.status(400).json({ message: 'User already exists' });
 
+    // Check if this is the first user to make them admin
+    const userCount = await User.countDocuments();
+    const role = userCount === 0 ? 'admin' : 'user';
+
     user = new User({ 
         username, 
         email: email || `${username}@example.com`, 
         password,
+        role,
         wallet: {
             mainBalance: 0,
             bonusBalance: 0,
-            spinCredits: 5 // Give 5 free spins on register
+            spinCredits: 5 
         }
     });
     
