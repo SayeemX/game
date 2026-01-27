@@ -49,3 +49,22 @@ body {
 .animate-glow {
   animation: glow 3s infinite;
 }
+
+@layer utilities {
+  .animate-gradient-x {
+    background-size: 200% 200%;
+    animation: gradient-x 15s ease infinite;
+  }
+  .clip-path-pointer {
+    clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
+  }
+}
+
+@keyframes gradient-x {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}

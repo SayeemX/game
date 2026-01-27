@@ -5,7 +5,7 @@ import { Gift, ArrowRight, Loader2, CheckCircle2, AlertCircle } from 'lucide-rea
 import { redeemAPI } from '../services/api';
 import { setUserData } from '../redux/slices/userSlice';
 
-const RedeemCodeSection = () => {
+const RedeemCodeSection = ({ isCompact = false }) => {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
@@ -23,22 +23,62 @@ const RedeemCodeSection = () => {
       setStatus({ type: 'success', message: response.data.message });
       setCode('');
       
-      // Update wallet in global state
-      if (response.data.wallet) {
-          // We need a full user object for setUserData, or we create a specific action
-          // For now, let's just trigger a profile refresh or use a partial update
-          // I'll use a trick: get current user from state if needed, but easier to just dispatch update
-          dispatch({ type: 'user/updateWallet', payload: response.data.wallet });
+      dispatch({ type: 'user/updateWallet', payload: response.data.wallet });
+      
+      // Clear status after 5 seconds if compact
+      if (isCompact) {
+          setTimeout(() => setStatus({ type: '', message: '' }), 5000);
       }
     } catch (error) {
       setStatus({ 
         type: 'error', 
-        message: error.response?.data?.message || 'Failed to redeem code. Please try again.' 
+        message: error.response?.data?.message || 'Failed to redeem' 
       });
     } finally {
       setLoading(false);
     }
   };
+
+  if (isCompact) {
+      return (
+        <div className="w-full">
+            <form onSubmit={handleRedeem} className="relative group">
+                <input
+                    type="text"
+                    placeholder="ENTER GIFT CODE"
+                    className="w-full px-8 py-5 bg-white/5 hover:bg-white/10 border-2 border-white/10 focus:border-yellow-500/50 rounded-3xl text-white placeholder:text-gray-600 font-black text-sm uppercase tracking-[0.3em] outline-none transition-all backdrop-blur-xl"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    disabled={loading}
+                />
+                <button
+                    type="submit"
+                    disabled={loading || !code.trim()}
+                    className="absolute right-2 top-2 bottom-2 px-8 bg-yellow-500 hover:bg-yellow-400 disabled:bg-gray-800 text-black font-black rounded-2xl transition-all flex items-center gap-2 shadow-lg shadow-yellow-500/20"
+                >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                </button>
+            </form>
+            <AnimatePresence>
+                {status.message && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className={`mt-4 p-4 rounded-2xl flex items-center justify-center gap-3 font-black text-[10px] uppercase tracking-widest backdrop-blur-md ${
+                        status.type === 'success' 
+                            ? 'bg-green-500/20 border border-green-500/30 text-green-400' 
+                            : 'bg-red-500/20 border border-red-500/30 text-red-400'
+                        }`}
+                    >
+                        {status.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                        {status.message}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+      );
+  }
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 mt-12">
