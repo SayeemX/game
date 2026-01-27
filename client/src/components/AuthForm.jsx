@@ -112,7 +112,7 @@ const AuthForm = ({ mode = 'login' }) => {
               onClick={() => setIsLogin(!isLogin)}
               className="text-gray-500 text-xs font-black uppercase tracking-widest hover:text-white transition-colors"
             >
-              {isLogin ? "New to KhelaZone? Create Account" : "Existing Member? Sign In"}
+              {isLogin ? "New to SayeemX? Create Account" : "Existing Member? Sign In"}
             </button>
           </div>
         </div>

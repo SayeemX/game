@@ -1,5 +1,5 @@
 {
-  "name": "khelazone-unified",
+  "name": "sayeemx-unified",
   "version": "1.0.0",
   "scripts": {
     "install-all": "cd server && npm install && cd ../client && npm install",

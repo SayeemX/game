@@ -42,7 +42,7 @@ const AppContent = () => {
         
         {/* Footer simple */}
         <footer className="py-12 border-t border-gray-900 bg-black text-center text-gray-600 text-[10px] font-bold uppercase tracking-[0.2em]">
-            © 2026 KHELAZONE ELITE GAMING ARENA • ALL RIGHTS RESERVED
+            © 2026 SAYEEMX ELITE GAMING ARENA • ALL RIGHTS RESERVED
         </footer>
       </Router>
     </div>
