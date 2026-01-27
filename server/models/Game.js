@@ -8,7 +8,7 @@ const gameSchema = new mongoose.Schema({
       name: String,
       type: { 
         type: String, 
-        enum: ['balance', 'bonus', 'spin', 'cash', 'asset', 'none', 'spins', 'crypto'] 
+        enum: ['balance', 'bonus', 'spin', 'cash', 'asset', 'none', 'spins', 'crypto', 'badluck', 'jackpot'] 
       },
       value: Number,
       probability: Number, // 0-100

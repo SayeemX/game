@@ -1,0 +1,20 @@
+require('dotenv').config();
+const mongoose = require('mongoose');
+const Game = require('./models/Game');
+
+const fixConfig = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log('Connected to MongoDB');
+
+    await Game.deleteMany({});
+    console.log('✅ Cleared old Game configurations');
+
+    process.exit(0);
+  } catch (err) {
+    console.error(err);
+    process.exit(1);
+  }
+};
+
+fixConfig();

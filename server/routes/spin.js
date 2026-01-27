@@ -70,9 +70,23 @@ router.post('/initialize', auth, async (req, res) => {
     
     if (needsSave) await user.save();
 
-    // Get or Create Game Config
-    let gameConfig = await Game.findOne();
-    if (!gameConfig) {
+    try {
+        if (!gameConfig) {
+            gameConfig = await Game.create({
+                spinGame: {
+                    prizes: DEFAULT_PRIZES,
+                    minBet: 1,
+                    maxBet: 100
+                }
+            });
+        } else if (!gameConfig.spinGame || gameConfig.spinGame.prizes.length < 8) {
+            // Update if existing config is outdated
+            gameConfig.spinGame = { ...gameConfig.spinGame, prizes: DEFAULT_PRIZES };
+            await gameConfig.save();
+        }
+    } catch (validationError) {
+        console.warn('Invalid game config found, resetting...', validationError.message);
+        await Game.deleteMany({});
         gameConfig = await Game.create({
             spinGame: {
                 prizes: DEFAULT_PRIZES,
@@ -80,10 +94,6 @@ router.post('/initialize', auth, async (req, res) => {
                 maxBet: 100
             }
         });
-    } else if (!gameConfig.spinGame || gameConfig.spinGame.prizes.length < 12) {
-        // Update if existing config is outdated
-        gameConfig.spinGame = { ...gameConfig.spinGame, prizes: DEFAULT_PRIZES };
-        await gameConfig.save();
     }
 
     res.json({
