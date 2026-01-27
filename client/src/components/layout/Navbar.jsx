@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, 
   Search, 
@@ -15,7 +16,10 @@ import {
   Gift,
   Gamepad2,
   Sparkles,
-  Trophy
+  Trophy,
+  Target,
+  Database,
+  Wallet as WalletIcon
 } from 'lucide-react';
 import { logout } from '../../redux/slices/userSlice';
 
