@@ -49,7 +49,7 @@ const GameCard = ({ title, description, path, icon: Icon, color, players }) => (
 );
 
 const Home = () => {
-  const { isAuthenticated } = useSelector(state => state.user);
+  const { isAuthenticated, user, wallet } = useSelector(state => state.user);
   const [activeTab, setActiveTab] = useState('all');
 
   return (
@@ -71,7 +71,7 @@ const Home = () => {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[10px] font-black uppercase tracking-[0.2em] mb-8"
             >
               <Gift className="w-4 h-4" />
-              SayeemX GIFT • EXCLUSIVE ARENA REWARDS
+              {isAuthenticated ? `WELCOME BACK, ${user?.username} • ELITE STATUS ACTIVE` : 'SayeemX GIFT • EXCLUSIVE ARENA REWARDS'}
             </motion.div>
             
             <motion.h1 
@@ -80,7 +80,11 @@ const Home = () => {
               transition={{ delay: 0.1 }}
               className="text-6xl md:text-8xl font-black text-white mb-8 tracking-tighter uppercase leading-[0.9]"
             >
-                Win Big in the <span className="text-yellow-500">Ultimate</span> Arena.
+                {isAuthenticated ? (
+                    <>Your Balance: <span className="text-yellow-500">${wallet.mainBalance.toFixed(2)}</span></>
+                ) : (
+                    <>Win Big in the <span className="text-yellow-500">Ultimate</span> Arena.</>
+                )}
             </motion.h1>
             
             <motion.p 
@@ -89,7 +93,10 @@ const Home = () => {
               transition={{ delay: 0.2 }}
               className="text-gray-500 text-lg md:text-xl font-bold uppercase tracking-wide mb-12 max-w-2xl mx-auto"
             >
-                Join SayeemX for a premium, provably fair gaming experience with instant rewards and elite challenges.
+                {isAuthenticated 
+                    ? "The arena is ready. Your multipliers are primed for legendary wins. Choose your game and start winning."
+                    : "Join SayeemX for a premium, provably fair gaming experience with instant rewards and elite challenges."
+                }
             </motion.p>
             
             <motion.div 
@@ -99,10 +106,15 @@ const Home = () => {
               className="flex flex-col sm:flex-row items-center justify-center gap-4"
             >
               {isAuthenticated ? (
-                <Link to="/spin" className="group px-10 py-5 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl shadow-2xl transition-all flex items-center gap-3 uppercase tracking-widest text-lg">
-                    Enter the Arena
-                    <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
-                </Link>
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <Link to="/spin" className="group px-10 py-5 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl shadow-2xl transition-all flex items-center gap-3 uppercase tracking-widest text-lg">
+                        Play Fortune Spin
+                        <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                    </Link>
+                    <Link to="/profile" className="px-10 py-5 bg-gray-900 hover:bg-gray-800 text-white font-black rounded-2xl border border-gray-800 transition-all uppercase tracking-widest text-lg">
+                        View Profile
+                    </Link>
+                </div>
               ) : (
                 <>
                     <Link to="/register" className="group px-10 py-5 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl shadow-2xl transition-all flex items-center gap-3 uppercase tracking-widest text-lg">

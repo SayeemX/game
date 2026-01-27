@@ -115,6 +115,21 @@ const userSlice = createSlice({
         state.wallet = action.payload.user.wallet || state.wallet;
         state.stats = action.payload.user.stats || state.stats;
       })
+      .addCase(registerUser.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(registerUser.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload.user;
+        state.isAuthenticated = true;
+        state.wallet = action.payload.user.wallet || state.wallet;
+        state.stats = action.payload.user.stats || state.stats;
+      })
+      .addCase(registerUser.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;

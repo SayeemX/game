@@ -10,6 +10,7 @@ import AuthForm from './components/AuthForm'; // Will check/update this next
 
 // Pages
 import Home from './pages/Home';
+import Profile from './pages/Profile';
 import SpinWheel from './components/games/SpinWheel';
 import BirdShooting from './components/games/BirdShooting';
 
@@ -30,6 +31,7 @@ const AppContent = () => {
         <main>
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/spin" element={<SpinWheel />} />
             <Route path="/bird-shooting" element={<BirdShooting />} />
             <Route path="/login" element={<AuthForm mode="login" />} />

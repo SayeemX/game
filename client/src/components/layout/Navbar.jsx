@@ -21,133 +21,144 @@ import { logout } from '../../redux/slices/userSlice';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const location = useLocation();
   const dispatch = useDispatch();
-  const { user, isAuthenticated } = useSelector(state => state.user);
+  const { user, isAuthenticated, wallet } = useSelector(state => state.user);
 
   const handleLogout = () => {
     dispatch(logout());
     setIsMenuOpen(false);
+    setIsProfileOpen(false);
   };
 
   return (
-    <nav className="bg-[#161b22] border-b border-[#30363d] h-16 sticky top-0 z-50">
-      <div className="max-w-[100vw] px-4 md:px-8 h-full">
-        <div className="flex items-center justify-between h-full gap-4">
+    <nav className="bg-[#0f212e] border-b border-gray-800/50 h-20 sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-4 h-full">
+        <div className="flex items-center justify-between h-full">
           
-          {/* Left Side: Logo & Main Nav */}
-          <div className="flex items-center gap-4 flex-1">
-            <Link to="/" className="flex items-center gap-2 text-white hover:opacity-70 transition-opacity">
-              <Gamepad2 className="w-8 h-8 text-yellow-500" />
-              <span className="font-black text-xl tracking-tighter uppercase">SayeemX</span>
-            </Link>
-
-            {/* Desktop Navigation */}
-            <div className="hidden lg:flex items-center gap-4 text-sm font-bold text-white uppercase tracking-wider">
-              <Link to="/spin" className="hover:text-yellow-500 flex items-center gap-1">
-                <Sparkles className="w-4 h-4" /> Spin
-              </Link>
-              <Link to="/bird-shooting" className="hover:text-yellow-500 flex items-center gap-1">
-                <Terminal className="w-4 h-4" /> Shoot
-              </Link>
-              <Link to="/" className="hover:text-yellow-500 flex items-center gap-1 text-yellow-500">
-                <Gift className="w-4 h-4" /> GIFT
-              </Link>
-              <Link to="/" className="hover:text-yellow-500 flex items-center gap-1">
-                <Trophy className="w-4 h-4" /> Leaderboard
-              </Link>
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-3 group">
+            <div className="w-10 h-10 bg-yellow-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/20 group-hover:scale-110 transition-transform">
+                <Gamepad2 className="w-6 h-6 text-black" />
             </div>
+            <span className="font-black text-2xl tracking-tighter uppercase text-white">Sayeem<span className="text-yellow-500">X</span></span>
+          </Link>
 
-            {/* Global Search */}
-            <div className="hidden md:flex items-center flex-1 max-w-[280px] relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-[#8b949e]" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search or jump to..."
-                className="block w-full bg-[#0d1117] border border-[#30363d] rounded-md py-1 pl-10 pr-3 text-sm text-white placeholder-[#8b949e] focus:outline-none focus:ring-1 focus:ring-[#58a6ff] focus:border-[#58a6ff] transition-all"
-              />
-              <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none">
-                <span className="text-[10px] border border-[#30363d] px-1.5 rounded bg-[#161b22] text-[#8b949e]">/</span>
-              </div>
-            </div>
+          {/* Desktop Nav */}
+          <div className="hidden lg:flex items-center gap-8">
+            {[
+                { label: 'Home', path: '/', icon: Gift },
+                { label: 'Spin', path: '/spin', icon: Sparkles },
+                { label: 'Shoot', path: '/bird-shooting', icon: Target },
+                { label: 'Elite', path: '/', icon: Trophy },
+            ].map((item) => (
+                <Link 
+                    key={item.label}
+                    to={item.path} 
+                    className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] transition-colors ${location.pathname === item.path ? 'text-yellow-500' : 'text-gray-400 hover:text-white'}`}
+                >
+                    <item.icon className="w-4 h-4" />
+                    {item.label}
+                </Link>
+            ))}
           </div>
 
-          {/* Right Side: Actions & Profile */}
-          <div className="flex items-center gap-2 md:gap-4">
-            <div className="flex items-center">
-              <button className="p-2 text-[#8b949e] hover:text-white transition-colors">
-                <Bell className="w-5 h-5" />
-              </button>
-              <button className="hidden sm:flex items-center gap-1 p-2 text-[#8b949e] hover:text-white transition-colors">
-                <Plus className="w-5 h-5" />
-                <ChevronDown className="w-3 h-3" />
-              </button>
-            </div>
-
+          {/* Right Side */}
+          <div className="flex items-center gap-4">
             {isAuthenticated ? (
-              <div className="relative group">
-                <button className="flex items-center gap-1">
-                  <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 overflow-hidden border border-[#30363d]">
-                    {/* Placeholder for user avatar */}
-                  </div>
-                  <ChevronDown className="w-3 h-3 text-[#8b949e]" />
-                </button>
-                <div className="absolute right-0 mt-2 w-48 bg-[#161b22] border border-[#30363d] rounded-md shadow-2xl py-2 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all z-50">
-                    <div className="px-4 py-2 border-b border-[#30363d] mb-2">
-                        <p className="text-xs text-[#8b949e]">Signed in as</p>
-                        <p className="text-sm font-bold text-white truncate">{user?.username}</p>
+              <div className="flex items-center gap-4">
+                {/* Wallet */}
+                <div className="hidden md:flex items-center gap-3 bg-black/40 border border-gray-800 rounded-2xl p-1.5 pr-4">
+                    <div className="w-8 h-8 bg-yellow-500/10 rounded-xl flex items-center justify-center border border-yellow-500/20">
+                        <Plus className="w-4 h-4 text-yellow-500" />
                     </div>
-                    <Link to="/profile" className="block px-4 py-2 text-sm text-[#c9d1d9] hover:bg-[#0d1117] hover:text-white">Your profile</Link>
-                    <Link to="/repositories" className="block px-4 py-2 text-sm text-[#c9d1d9] hover:bg-[#0d1117] hover:text-white">Your repositories</Link>
-                    <Link to="/settings" className="block px-4 py-2 text-sm text-[#c9d1d9] hover:bg-[#0d1117] hover:text-white border-t border-[#30363d] mt-2">Settings</Link>
-                    <button
-                        onClick={handleLogout}
-                        className="block w-full text-left px-4 py-2 text-sm text-[#c9d1d9] hover:bg-[#0d1117] hover:text-white"
+                    <div className="flex flex-col">
+                        <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">Balance</span>
+                        <span className="text-sm font-black text-white">${wallet.mainBalance.toFixed(2)}</span>
+                    </div>
+                </div>
+
+                {/* Profile Dropdown */}
+                <div className="relative">
+                    <button 
+                        onClick={() => setIsProfileOpen(!isProfileOpen)}
+                        className="flex items-center gap-3 bg-[#1a2c38] hover:bg-[#223947] border border-gray-800 p-1.5 rounded-2xl transition-all"
                     >
-                        Sign out
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-black font-black text-xs">
+                            {user?.username?.substring(0, 2).toUpperCase()}
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
                     </button>
+
+                    <AnimatePresence>
+                        {isProfileOpen && (
+                            <motion.div 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                className="absolute right-0 mt-3 w-64 bg-[#1a2c38] border border-gray-800 rounded-3xl shadow-2xl py-4 z-50 overflow-hidden"
+                            >
+                                <div className="px-6 py-4 border-b border-gray-800 mb-2">
+                                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">Elite Member</p>
+                                    <p className="text-lg font-black text-white truncate">{user?.username}</p>
+                                </div>
+                                <div className="px-2">
+                                    <Link to="/profile" onClick={() => setIsProfileOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black text-gray-400 hover:text-white hover:bg-white/5 rounded-2xl transition-all uppercase tracking-widest">
+                                        <UserIcon className="w-4 h-4" /> Your Profile
+                                    </Link>
+                                    <Link to="/settings" onClick={() => setIsProfileOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black text-gray-400 hover:text-white hover:bg-white/5 rounded-2xl transition-all uppercase tracking-widest">
+                                        <Settings className="w-4 h-4" /> Settings
+                                    </Link>
+                                    <button 
+                                        onClick={handleLogout}
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-xs font-black text-red-500 hover:bg-red-500/10 rounded-2xl transition-all uppercase tracking-widest"
+                                    >
+                                        <LogOut className="w-4 h-4" /> Sign Out
+                                    </button>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3">
-                <Link to="/login" className="text-sm font-bold text-white hover:text-[#8b949e]">Sign in</Link>
-                <Link to="/register" className="text-sm font-bold text-white border border-[#30363d] px-3 py-1.5 rounded-md hover:bg-[#30363d]">Sign up</Link>
+              <div className="flex items-center gap-4">
+                <Link to="/login" className="hidden sm:block text-[10px] font-black text-gray-400 hover:text-white uppercase tracking-widest transition-colors">Sign In</Link>
+                <Link to="/register" className="px-6 py-3 bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-black rounded-xl shadow-lg shadow-yellow-500/10 transition-all uppercase tracking-widest">Sign Up</Link>
               </div>
             )}
+            
+            {/* Mobile Menu Toggle */}
+            <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="lg:hidden p-2 text-gray-400 hover:text-white"
+            >
+                {isMenuOpen ? <X /> : <Menu />}
+            </button>
           </div>
-
-          {/* Mobile Menu Button */}
-          <button 
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="lg:hidden p-2 text-white"
-          >
-            {isMenuOpen ? <X /> : <Menu />}
-          </button>
         </div>
       </div>
 
       {/* Mobile Menu */}
-      {isMenuOpen && (
-        <div className="lg:hidden bg-[#161b22] border-b border-[#30363d] px-4 py-4 space-y-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8b949e]" />
-              <input
-                type="text"
-                placeholder="Search GitHub"
-                className="block w-full bg-[#0d1117] border border-[#30363d] rounded-md py-2 pl-10 pr-3 text-sm text-white"
-              />
-            </div>
-            <div className="flex flex-col gap-3 font-bold text-sm text-white">
-                <Link to="/" onClick={() => setIsMenuOpen(false)}>Dashboard</Link>
-                <Link to="/" onClick={() => setIsMenuOpen(false)}>Pull requests</Link>
-                <Link to="/" onClick={() => setIsMenuOpen(false)}>Issues</Link>
-                <Link to="/" onClick={() => setIsMenuOpen(false)}>Marketplace</Link>
-                <Link to="/" onClick={() => setIsMenuOpen(false)}>Explore</Link>
-            </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {isMenuOpen && (
+            <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="lg:hidden bg-[#0f212e] border-b border-gray-800 overflow-hidden"
+            >
+                <div className="px-4 py-8 space-y-6">
+                    <div className="flex flex-col gap-4">
+                        <Link to="/spin" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Spin</Link>
+                        <Link to="/bird-shooting" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Shoot</Link>
+                        <Link to="/" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Leaderboard</Link>
+                    </div>
+                </div>
+            </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 };
