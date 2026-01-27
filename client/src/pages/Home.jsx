@@ -194,49 +194,6 @@ const Home = () => {
             </motion.div>
         </div>
       </section>
-        <div className="flex items-center justify-between mb-12">
-            <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Featured Games</h2>
-            <div className="flex gap-2">
-                {['all', 'original', 'slots'].map(tab => (
-                    <button 
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-yellow-500 text-black' : 'bg-gray-900 text-gray-500 border border-gray-800 hover:border-gray-700'}`}
-                    >
-                        {tab}
-                    </button>
-                ))}
-            </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <GameCard 
-                title="Fortune Spin"
-                description="The ultimate prize wheel. Spin for a chance to win massive rewards and exclusive SayeemX GIFT bonuses."
-                path="/spin"
-                icon={Sparkles}
-                color="from-yellow-500 to-orange-500"
-                players="1.2k"
-            />
-            <GameCard 
-                title="Bird Shoot"
-                description="Test your precision in this fast-paced challenge. High accuracy earns legendary SayeemX multipliers."
-                path="/bird-shooting"
-                icon={Target}
-                color="from-blue-500 to-cyan-500"
-                players="450"
-            />
-            <motion.div 
-                className="relative bg-[#1a2c38] rounded-3xl border border-gray-800/50 p-8 flex flex-col items-center justify-center text-center opacity-60"
-            >
-                <div className="w-16 h-16 rounded-2xl bg-gray-800 flex items-center justify-center mb-6">
-                    <Crown className="w-8 h-8 text-gray-600" />
-                </div>
-                <h3 className="text-2xl font-black text-gray-400 mb-2 uppercase tracking-tighter">New Game</h3>
-                <p className="text-gray-600 text-sm font-bold uppercase tracking-widest">Coming Soon to SayeemX</p>
-            </motion.div>
-        </div>
-      </section>
 
       {/* Trust & Features */}
       <section className="bg-black py-32 border-t border-gray-900">
