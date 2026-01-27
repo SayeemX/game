@@ -36,20 +36,16 @@ const calculateWinningPrize = (prizes, hash) => {
     return prizes[0]; // Fallback
 };
 
-// Blueprint Prize Structure
+// Blueprint Prize Structure (8 distinct segments)
 const DEFAULT_PRIZES = [
-  { id: '1', name: "10 Bonus", value: 10, type: "bonus", probability: 15, color: "#FF6B6B", tier: "common" },
-  { id: '2', name: "5 Bonus", value: 5, type: "bonus", probability: 10, color: "#4ECDC4", tier: "common" },
-  { id: '3', name: "3 Spins", value: 3, type: "spins", probability: 20, color: "#FFD166", tier: "common" },
-  { id: '4', name: "2 Balance", value: 2, type: "balance", probability: 18.5, color: "#06D6A0", tier: "common" },
-  { id: '5', name: "25 Balance", value: 25, type: "balance", probability: 8, color: "#118AB2", tier: "rare" },
-  { id: '6', name: "50 Bonus", value: 50, type: "bonus", probability: 7, color: "#EF476F", tier: "rare" },
-  { id: '7', name: "100 Balance", value: 100, type: "balance", probability: 5, color: "#9D4EDD", tier: "rare" },
-  { id: '8', name: "10 Spins", value: 10, type: "spins", probability: 10, color: "#FF9A76", tier: "rare" },
-  { id: '9', name: "500 Balance", value: 500, type: "balance", probability: 3, color: "#FFD700", tier: "legendary" },
-  { id: '10', name: "10 Crypto", value: 10, type: "crypto", probability: 2, color: "#00D4AA", tier: "legendary" },
-  { id: '11', name: "1000 Balance", value: 1000, type: "balance", probability: 1, color: "#FF4081", tier: "legendary" },
-  { id: '12', name: "JACKPOT", value: 5000, type: "jackpot", probability: 0.5, color: "#9C27B0", tier: "legendary" },
+  { id: '1', name: "2 Balance", value: 2, type: "balance", probability: 25, color: "#1a2c38", tier: "common" },
+  { id: '2', name: "5 Balance", value: 5, type: "balance", probability: 15, color: "#3bc117", tier: "common" },
+  { id: '3', name: "Crash", value: 0, type: "badluck", probability: 30, color: "#ff4d4d", tier: "common" },
+  { id: '4', name: "7 Balance", value: 7, type: "balance", probability: 10, color: "#1a2c38", tier: "common" },
+  { id: '5', name: "10 Balance", value: 10, type: "balance", probability: 8, color: "#3bc117", tier: "rare" },
+  { id: '6', name: "Free Spin", value: 1, type: "spins", probability: 7, color: "#FFD166", tier: "rare" },
+  { id: '7', name: "100 Balance", value: 100, type: "balance", probability: 4, color: "#118AB2", tier: "rare" },
+  { id: '8', name: "500 Balance", value: 500, type: "balance", probability: 1, color: "#FFD700", tier: "legendary" },
 ];
 
 // Initialize spin

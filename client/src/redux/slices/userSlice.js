@@ -100,6 +100,9 @@ const userSlice = createSlice({
         state.wallet = action.payload.wallet || state.wallet;
         state.stats = action.payload.stats || state.stats;
         state.isAuthenticated = true;
+    },
+    updateWallet: (state, action) => {
+        state.wallet = { ...state.wallet, ...action.payload };
     }
   },
   extraReducers: (builder) => {

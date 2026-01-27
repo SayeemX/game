@@ -1,467 +1,313 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { awardPrize, updateBalance } from '../../redux/slices/userSlice';
-import api from '../../services/api';
-import Confetti from 'react-confetti';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
+  Sparkles, 
+  RotateCw, 
   Trophy, 
-  Coins, 
-  Gift, 
+  ShieldCheck, 
   Zap, 
-  Sparkles,
   AlertCircle,
-  ShieldCheck,
-  RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  Copy
+  Settings,
+  ArrowRight,
+  Wallet,
+  Coins
 } from 'lucide-react';
+import { spinAPI } from '../../services/api';
+import { updateWallet } from '../../redux/slices/userSlice';
 
 const SpinWheel = () => {
   const dispatch = useDispatch();
-  const { wallet } = useSelector(state => state.user);
+  const { wallet, isAuthenticated } = useSelector(state => state.user);
   
-  // Game State
+  const canvasRef = useRef(null);
   const [prizes, setPrizes] = useState([]);
   const [isSpinning, setIsSpinning] = useState(false);
-  const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState(null);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const [error, setError] = useState('');
+  const [rotation, setRotation] = useState(0);
+  const [error, setError] = useState(null);
   
-  // Provably Fair State
-  const [clientSeed, setClientSeed] = useState('');
-  const [serverSeedHash, setServerSeedHash] = useState('');
-  const [nonce, setNonce] = useState(0);
-  const [lastHash, setLastHash] = useState('');
-  const [showFairness, setShowFairness] = useState(false);
-  const [isRotatingSeed, setIsRotatingSeed] = useState(false);
+  // Physics states
+  const [currentAngle, setCurrentAngle] = useState(0);
 
-  const wheelRef = useRef(null);
-  const spins = wallet?.spinCredits || 0;
-  const balance = wallet?.mainBalance || 0;
-
-  // Initialize Game
   useEffect(() => {
-    const initGame = async () => {
-      try {
-        const { data } = await api.post('/spin/initialize');
-        if (data.success) {
-            setPrizes(data.prizes);
-            setClientSeed(data.clientSeed);
-            setNonce(data.nonce);
-            setServerSeedHash(data.serverSeedHash);
-        }
-      } catch (err) {
-        console.error("Init failed", err);
-        setError("Failed to load game configuration");
-      }
-    };
-    initGame();
+    fetchConfig();
   }, []);
 
-  const segmentAngle = prizes.length > 0 ? 360 / prizes.length : 0;
-
-  const handleSpin = async () => {
-    if (isSpinning || spins < 1) {
-      setError(spins < 1 ? "Not enough spins!" : "Already spinning!");
-      return;
+  useEffect(() => {
+    if (prizes.length > 0) {
+      drawWheel();
     }
+  }, [prizes, currentAngle]);
 
-    setIsSpinning(true);
-    setError('');
-    setResult(null);
-
+  const fetchConfig = async () => {
     try {
-      // Optimistic update for smooth UI
-      // In a real app, maybe wait for response before starting spin, 
-      // but here we want instant feedback. We'll start a generic spin first? 
-      // Actually, waiting for response is safer for result calculation.
-      
-      const { data } = await api.post('/spin/play', { 
-        bet: 1,
-        clientSeed: clientSeed 
-      });
+      const res = await spinAPI.initialize();
+      setPrizes(res.data.prizes);
+    } catch (err) {
+      setError('Failed to initialize game');
+    }
+  };
 
-      if (!data.success) throw new Error("Spin failed");
-
-      const { prize, result: pfResult } = data;
-
-      // Update PF State immediately
-      setLastHash(pfResult.hash);
-      setNonce(pfResult.nonce + 1); // Increment local nonce display
-
-      // Find winning index
-      const winningIndex = prizes.findIndex(p => p.id === prize.id);
+  const drawWheel = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    const center = size / 2;
+    const radius = center - 10;
+    
+    ctx.clearRect(0, 0, size, size);
+    
+    const segmentAngle = (2 * Math.PI) / prizes.length;
+    
+    prizes.forEach((prize, i) => {
+      const startAngle = i * segmentAngle + currentAngle;
+      const endAngle = startAngle + segmentAngle;
       
-      // Calculate rotation
-      // Align 0 deg (top) to the winning segment center
-      // Each segment is segmentAngle wide.
-      // Index 0 is from 0 to segmentAngle. Center is segmentAngle/2.
-      // Wait, let's check visual rendering.
-      // Visual: Rotation 0 means index 0 is at 0 degrees (12 o'clock)?
-      // If we render segments starting from 0 deg clockwise:
-      // Index 0: 0 to 30 deg. Center at 15 deg.
-      // Pointer is at Top (0 deg).
-      // To get Index 0 center to Top, we need to rotate: -15 deg.
-      // To get Index i center to Top, we rotate: -(i * angle + angle/2)
+      // Draw segment
+      ctx.beginPath();
+      ctx.moveTo(center, center);
+      ctx.arc(center, center, radius, startAngle, endAngle);
+      ctx.fillStyle = i % 2 === 0 ? '#1a2c38' : '#0f212e';
+      if (prize.type === 'badluck') ctx.fillStyle = '#1e1e1e';
+      if (prize.tier === 'legendary') ctx.fillStyle = '#fbbf24';
+      ctx.fill();
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 2;
+      ctx.stroke();
       
-      const anglePerSegment = 360 / prizes.length;
-      const indexCenterAngle = (winningIndex * anglePerSegment) + (anglePerSegment / 2);
-      
-      // We want this angle to be at 0 (top)
-      // So target rotation should be -indexCenterAngle
-      // Add extra spins (e.g. 5 full rotations = 1800 deg)
-      // We need to keep adding to current 'rotation' to spin smoothly in one direction
-      const extraSpins = 5 * 360; 
-      
-      // Current rotation modulo 360 is where we are.
-      // We want to end at a specific angle relative to 0.
-      // Let's just keep adding positive rotation.
-      // Target visual angle: 360 - indexCenterAngle (if rotating clockwise to bring it to top)
-      
-      const targetVisualAngle = 360 - indexCenterAngle;
-      
-      // Ensure we always spin forward significantly
-      const currentRotation = rotation;
-      const baseNextRotation = currentRotation + extraSpins;
-      
-      // Adjust to land on target
-      // We want (baseNextRotation + adjustment) % 360 === targetVisualAngle
-      const remainder = baseNextRotation % 360;
-      const adjustment = targetVisualAngle - remainder;
-      
-      const finalRotation = baseNextRotation + adjustment + (adjustment < 0 ? 360 : 0);
+      // Draw text
+      ctx.save();
+      ctx.translate(center, center);
+      ctx.rotate(startAngle + segmentAngle / 2);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = (prize.tier === 'legendary' && i % 2 !== 0) ? '#000' : '#fff';
+      if (prize.type === 'badluck') ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 12px Inter';
+      ctx.fillText(prize.name.toUpperCase(), radius - 30, 5);
+      ctx.restore();
+    });
+    
+    // Center circle
+    ctx.beginPath();
+    ctx.arc(center, center, 40, 0, 2 * Math.PI);
+    ctx.fillStyle = '#1a2c38';
+    ctx.fill();
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 4;
+    ctx.stroke();
 
-      setRotation(finalRotation);
+    // Inner logo/icon
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 20px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', center, center + 7);
+  };
 
-      // Wait for animation
-      setTimeout(() => {
-        setResult(prize);
-        setIsSpinning(false);
-        
-        if (prize.tier === 'legendary' || prize.value >= 500) {
-          setShowConfetti(true);
-          setTimeout(() => setShowConfetti(false), 5000);
-        }
-
-        // Update Redux
-        dispatch(awardPrize(prize));
-        dispatch(updateBalance({ 
-          type: prize.type === 'balance' ? 'mainBalance' : (prize.type === 'bonus' ? 'bonusBalance' : 'spinCredits'), 
-          amount: prize.value 
-        }));
-
-      }, 4500);
-
+  const spin = async () => {
+    if (isSpinning || wallet.spinCredits < 1) return;
+    
+    setIsSpinning(true);
+    setResult(null);
+    setError(null);
+    
+    try {
+      const res = await spinAPI.play(1);
+      const winningPrize = res.data.prize;
+      
+      // Calculate stop angle
+      const prizeIndex = prizes.findIndex(p => p.id === winningPrize.id);
+      const segmentAngle = 360 / prizes.length;
+      
+      // Target angle: 
+      // 1. Multiple full rotations
+      // 2. Offset to the winning segment
+      // 3. Subtract from 360 because canvas rotation is clockwise but wheel visually "spins"
+      // We want the pointer (at top, 270deg or -90deg) to hit the segment
+      const extraSpins = 5 + Math.random() * 5;
+      const targetRotation = extraSpins * 360 + (360 - (prizeIndex * segmentAngle) - segmentAngle / 2);
+      
+      animateWheel(targetRotation, res.data);
+      
     } catch (err) {
       setError(err.response?.data?.error || 'Spin failed');
       setIsSpinning(false);
     }
   };
 
-  const handleRotateSeed = async () => {
-    setIsRotatingSeed(true);
-    try {
-        const { data } = await api.post('/spin/rotate-seed');
-        if (data.success) {
-            setServerSeedHash(data.newServerSeedHash);
-            setNonce(0);
-            // Optionally show the old seed or just notify
-        }
-    } catch (err) {
-        setError("Failed to rotate seed");
-    } finally {
-        setIsRotatingSeed(false);
-    }
-  };
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    // Could add toast here
-  };
-
-  const getTierColor = (tier) => {
-    switch(tier) {
-      case 'legendary': return 'bg-gradient-to-r from-yellow-500 to-orange-500';
-      case 'rare': return 'bg-gradient-to-r from-purple-500 to-pink-500';
-      default: return 'bg-gradient-to-r from-blue-500 to-cyan-500';
-    }
-  };
-
-  const getIcon = (type) => {
-      switch(type) {
-          case 'bonus': return <Gift className="w-4 h-4" />;
-          case 'spins': return <Zap className="w-4 h-4" />;
-          case 'balance': return <Coins className="w-4 h-4" />;
-          case 'crypto': return <Sparkles className="w-4 h-4" />;
-          case 'jackpot': return <Trophy className="w-4 h-4" />;
-          default: return <AlertCircle className="w-4 h-4" />;
+  const animateWheel = (targetRotation, gameData) => {
+    const startTime = performance.now();
+    const duration = 5000; // 5 seconds
+    const startAngle = currentAngle * (180 / Math.PI);
+    
+    const animate = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Ease out cubic
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const newRotation = startAngle + (targetRotation * easeOut);
+      
+      setCurrentAngle(newRotation * (Math.PI / 180));
+      
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        setIsSpinning(false);
+        setResult(gameData.prize);
+        dispatch(updateWallet(gameData.wallet));
       }
+    };
+    
+    requestAnimationFrame(animate);
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-white p-4 font-sans">
-      {showConfetti && (
-        <Confetti
-          width={window.innerWidth}
-          height={window.innerHeight}
-          recycle={false}
-          numberOfPieces={200}
-          gravity={0.1}
-          colors={['#FFD700', '#FFA500', '#FF6347', '#32CD32']}
-        />
-      )}
-
-      {/* Header */}
-      <div className="max-w-7xl mx-auto pt-8">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[10px] font-black uppercase tracking-[0.2em] mb-2">
-              <Gift className="w-3 h-3" />
-              SayeemX GIFT
-            </div>
-            <h1 className="text-4xl md:text-5xl font-black text-white uppercase tracking-tighter">
-              Fortune Spin
-            </h1>
-          </div>
-          <div className="flex gap-4">
-            <div className="bg-[#161b22] px-6 py-4 rounded-2xl border border-gray-800 flex flex-col items-end min-w-[140px]">
-              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Balance</div>
-              <div className="text-2xl font-black text-green-400 font-mono tracking-tight">${balance.toFixed(2)}</div>
-            </div>
-            <div className="bg-[#161b22] px-6 py-4 rounded-2xl border border-gray-800 flex flex-col items-end min-w-[140px]">
-              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Spins</div>
-              <div className="text-2xl font-black text-yellow-500 font-mono tracking-tight">{spins}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Game Area */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
-          
-          {/* Wheel Section */}
-          <div className="lg:col-span-2 flex flex-col items-center justify-center bg-[#161b22] rounded-3xl border border-gray-800 p-8 md:p-12 relative overflow-hidden">
-             {/* Background glow */}
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/5 blur-[100px] rounded-full pointer-events-none"></div>
-
-            <div className="relative z-10">
-              {/* Pointer */}
-              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 z-20 drop-shadow-xl">
-                <div className="w-12 h-12 bg-gradient-to-b from-yellow-400 to-yellow-600 clip-path-polygon-[50%_100%,0%_0%,100%_0%]"></div>
-              </div>
-              
-              {/* Wheel */}
-              <motion.div
-                ref={wheelRef}
-                className="relative w-[320px] h-[320px] sm:w-[500px] sm:h-[500px] rounded-full border-[16px] border-[#0d1117] shadow-[0_0_60px_rgba(0,0,0,0.5)] overflow-hidden"
-                animate={{ rotate: rotation }}
-                transition={{
-                  duration: 4.5,
-                  ease: [0.15, 0.85, 0.35, 1.05] // Custom bezier for realistic heavy wheel feel
-                }}
-                style={{
-                  background: prizes.length > 0 ? `conic-gradient(${prizes
-                    .map((seg, i) => `${seg.color} ${i * segmentAngle}deg ${(i + 1) * segmentAngle}deg`)
-                    .join(', ')})` : '#333'
-                }}
-              >
-                {/* Center Hub */}
-                <div className="absolute inset-[42%] bg-[#161b22] rounded-full border-[8px] border-[#0d1117] z-20 flex items-center justify-center shadow-2xl">
-                   <div className="text-center">
-                    <div className="text-2xl font-black text-white tracking-tighter leading-none">SYM</div>
-                    <div className="text-[10px] text-yellow-500 font-bold tracking-[0.3em] mt-1">GIFT</div>
-                  </div>
-                </div>
-
-                {/* Segments */}
-                {prizes.map((prize, index) => {
-                  const angle = index * segmentAngle + segmentAngle / 2;
-                  return (
-                    <div
-                      key={prize.id}
-                      className="absolute top-0 left-1/2 w-1 h-[50%] origin-bottom flex justify-center pt-6"
-                      style={{
-                        transform: `translateX(-50%) rotate(${angle}deg)`,
-                      }}
-                    >
-                      <div className="flex flex-col items-center transform rotate-0 origin-center">
-                         <div className="text-white drop-shadow-md mb-1 transform scale-75 sm:scale-100">
-                             {getIcon(prize.type)}
-                         </div>
-                         <div className="text-white font-black text-[10px] sm:text-xs uppercase tracking-tight whitespace-nowrap drop-shadow-md bg-black/20 px-2 py-0.5 rounded-full backdrop-blur-sm">
-                            {prize.value > 0 ? prize.value : ''} {prize.type === 'balance' ? '$' : ''}
-                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </motion.div>
-            </div>
-
-            {/* Spin Button */}
-            <div className="text-center mt-12 w-full max-w-sm relative z-10">
-              <button
-                onClick={handleSpin}
-                disabled={isSpinning || spins < 1}
-                className={`w-full py-5 text-xl font-black rounded-2xl transition-all duration-300 transform uppercase tracking-widest ${
-                  isSpinning || spins < 1
-                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                    : 'bg-yellow-500 hover:bg-yellow-400 text-black shadow-[0_0_30px_rgba(234,179,8,0.3)] hover:shadow-[0_0_50px_rgba(234,179,8,0.5)] hover:-translate-y-1 active:translate-y-0'
-                } flex items-center justify-center gap-3`}
-              >
-                {isSpinning ? (
-                  <>
-                    <RefreshCw className="w-6 h-6 animate-spin" />
-                    SPINNING...
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-6 h-6 fill-current" />
-                    SPIN FOR GLORY
-                  </>
-                )}
-              </button>
-              
-              {error && (
-                <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold flex items-center justify-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  {error}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="flex flex-col gap-6">
+    <div className="min-h-screen bg-[#0d1117] text-white pt-12 pb-24 overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4">
+        
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
             
-            {/* Result Card */}
-            <div className="min-h-[160px]">
-                <AnimatePresence mode="wait">
-                    {result ? (
+            {/* Left Side: Game Stats & Info */}
+            <div className="lg:col-span-4 space-y-8">
+                <div>
                     <motion.div
-                        key="result"
-                        initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        className={`p-8 rounded-3xl ${getTierColor(result.tier)} shadow-xl text-center border border-white/10 relative overflow-hidden`}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[10px] font-black uppercase tracking-[0.2em] mb-6"
                     >
-                        <div className="relative z-10">
-                            <div className="text-xs font-black uppercase tracking-[0.2em] mb-2 opacity-90">Congratulations</div>
-                            <div className="text-4xl font-black mb-2 text-white drop-shadow-md">{result.name}</div>
-                            <div className="text-sm font-bold opacity-90 uppercase tracking-wide">Added to Wallet</div>
-                        </div>
-                         {/* Shine effect */}
-                        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-tr from-transparent via-white/20 to-transparent skew-x-12 opacity-50"></div>
+                        <Zap className="w-4 h-4" /> PROVABLY FAIR SECURED
                     </motion.div>
-                    ) : (
-                    <div className="h-full flex flex-col items-center justify-center p-8 rounded-3xl bg-[#161b22] border border-gray-800 text-center">
-                        <Trophy className="w-12 h-12 text-gray-700 mb-4" />
-                        <div className="text-gray-500 font-bold uppercase tracking-widest text-xs">Ready to Win?</div>
+                    <h1 className="text-5xl font-black uppercase tracking-tighter mb-4 leading-none">
+                        Fortune <span className="text-yellow-500">Spin</span>
+                    </h1>
+                    <p className="text-gray-500 font-bold uppercase tracking-widest text-sm leading-relaxed">
+                        Spin the legendary SayeemX wheel for a chance to win massive multipliers, bonus balance, and exclusive rewards.
+                    </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-[#1a2c38] border border-gray-800 p-6 rounded-3xl">
+                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Your Spins</p>
+                        <div className="flex items-center gap-2">
+                            <RotateCw className="w-4 h-4 text-yellow-500" />
+                            <span className="text-2xl font-black">{wallet.spinCredits}</span>
+                        </div>
                     </div>
+                    <div className="bg-[#1a2c38] border border-gray-800 p-6 rounded-3xl">
+                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Win Rate</p>
+                        <div className="flex items-center gap-2">
+                            <Trophy className="w-4 h-4 text-green-500" />
+                            <span className="text-2xl font-black">74%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-black/40 border border-gray-800 rounded-3xl p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-widest text-gray-500">Cost per spin</span>
+                        <span className="text-sm font-black text-white">1 Credit</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-widest text-gray-500">Max Prize</span>
+                        <span className="text-sm font-black text-yellow-500">$500.00</span>
+                    </div>
+                    <button 
+                        onClick={spin}
+                        disabled={isSpinning || wallet.spinCredits < 1}
+                        className="w-full py-5 bg-yellow-500 hover:bg-yellow-400 disabled:bg-gray-800 disabled:text-gray-500 text-black font-black rounded-2xl uppercase tracking-[0.2em] shadow-2xl shadow-yellow-500/10 transition-all flex items-center justify-center gap-3"
+                    >
+                        {isSpinning ? <Loader2 className="w-6 h-6 animate-spin" /> : (
+                            <>
+                                <Coins className="w-6 h-6" /> Spin Now
+                            </>
+                        )}
+                    </button>
+                    {error && (
+                        <p className="text-[10px] text-red-500 font-black uppercase text-center">{error}</p>
                     )}
-                </AnimatePresence>
+                </div>
             </div>
 
-            {/* Provably Fair Panel */}
-            <div className="bg-[#161b22] rounded-3xl border border-gray-800 overflow-hidden">
-                <button 
-                    onClick={() => setShowFairness(!showFairness)}
-                    className="w-full flex items-center justify-between p-6 hover:bg-gray-800/50 transition-colors"
-                >
-                    <div className="flex items-center gap-3">
-                        <ShieldCheck className="w-5 h-5 text-green-500" />
-                        <span className="font-bold text-gray-300 uppercase tracking-wider text-sm">Provably Fair</span>
-                    </div>
-                    {showFairness ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-                </button>
+            {/* Middle: The Wheel */}
+            <div className="lg:col-span-5 flex flex-col items-center justify-center relative">
+                {/* Pointer */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20">
+                    <div className="w-8 h-12 bg-yellow-500 clip-path-pointer shadow-2xl"></div>
+                </div>
                 
+                <div className="relative p-4 bg-[#1a2c38] rounded-full border-8 border-gray-800 shadow-[0_0_100px_rgba(250,204,21,0.05)]">
+                    <canvas 
+                        ref={canvasRef} 
+                        width={500} 
+                        height={500} 
+                        className="max-w-full h-auto rounded-full"
+                    />
+                </div>
+
+                {/* Win Modal / Result */}
                 <AnimatePresence>
-                    {showFairness && (
+                    {result && (
                         <motion.div 
-                            initial={{ height: 0 }}
-                            animate={{ height: 'auto' }}
-                            exit={{ height: 0 }}
-                            className="overflow-hidden"
+                            initial={{ opacity: 0, scale: 0.5, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.5, y: 20 }}
+                            className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
                         >
-                            <div className="p-6 pt-0 space-y-4 border-t border-gray-800">
-                                <div>
-                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">Active Client Seed</label>
-                                    <div className="flex gap-2">
-                                        <input 
-                                            type="text" 
-                                            value={clientSeed}
-                                            onChange={(e) => setClientSeed(e.target.value)}
-                                            className="w-full bg-[#0d1117] border border-gray-700 rounded-xl px-3 py-2 text-xs font-mono text-gray-300 focus:border-yellow-500 outline-none transition-colors"
-                                        />
-                                        <button onClick={() => setClientSeed(Math.random().toString(36).substring(2))} className="p-2 bg-gray-800 rounded-xl hover:bg-gray-700 text-gray-400">
-                                            <RefreshCw className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">Active Server Seed (Hashed)</label>
-                                    <div className="flex gap-2 items-center bg-[#0d1117] border border-gray-700 rounded-xl px-3 py-2">
-                                        <code className="text-[10px] text-gray-400 truncate flex-1 font-mono">{serverSeedHash}</code>
-                                        <button onClick={() => copyToClipboard(serverSeedHash)} className="text-gray-500 hover:text-white"><Copy className="w-3 h-3" /></button>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4">
-                                     <div className="flex-1">
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">Nonce</label>
-                                        <div className="bg-[#0d1117] border border-gray-700 rounded-xl px-3 py-2 text-xs font-mono text-gray-300">{nonce}</div>
-                                     </div>
-                                     <div className="flex-1">
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">Rotate Seed</label>
-                                        <button 
-                                            onClick={handleRotateSeed}
-                                            disabled={isRotatingSeed}
-                                            className="w-full bg-gray-800 hover:bg-gray-700 text-xs font-bold text-gray-300 py-2 rounded-xl transition-colors border border-gray-700"
-                                        >
-                                            {isRotatingSeed ? '...' : 'New Pair'}
-                                        </button>
-                                     </div>
-                                </div>
-
-                                {lastHash && (
-                                    <div>
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">Last Game Hash</label>
-                                        <div className="flex gap-2 items-center bg-[#0d1117] border border-green-900/30 rounded-xl px-3 py-2">
-                                            <code className="text-[10px] text-green-500 truncate flex-1 font-mono">{lastHash}</code>
-                                            <button onClick={() => copyToClipboard(lastHash)} className="text-green-500 hover:text-white"><Copy className="w-3 h-3" /></button>
-                                        </div>
-                                    </div>
-                                )}
+                            <div className="bg-yellow-500 p-8 rounded-[3rem] shadow-[0_0_50px_rgba(250,204,21,0.5)] text-center pointer-events-auto border-8 border-black">
+                                <Trophy className="w-12 h-12 text-black mx-auto mb-4" />
+                                <h2 className="text-4xl font-black text-black uppercase tracking-tighter mb-1">
+                                    {result.type === 'badluck' ? 'Unlucky!' : 'You Won!'}
+                                </h2>
+                                <p className="text-black font-black text-lg uppercase tracking-widest mb-6">
+                                    {result.name}
+                                </p>
+                                <button 
+                                    onClick={() => setResult(null)}
+                                    className="px-8 py-3 bg-black text-white font-black rounded-2xl uppercase tracking-widest text-xs hover:scale-105 transition-transform"
+                                >
+                                    Continue
+                                </button>
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
             </div>
 
-            {/* Payout Table */}
-            <div className="bg-[#161b22] rounded-3xl border border-gray-800 p-6">
-                <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">Payout Table</h3>
-                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-800">
-                    {prizes.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between text-xs p-2 rounded-lg hover:bg-gray-800/50 transition-colors">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full" style={{ background: p.color }}></div>
-                                <span className="font-bold text-gray-300">{p.name}</span>
-                            </div>
-                            <span className="font-mono text-gray-500">{p.probability}%</span>
-                        </div>
-                    ))}
+            {/* Right Side: Features */}
+            <div className="lg:col-span-3 space-y-6">
+                <div className="p-8 bg-[#1a2c38] border border-gray-800 rounded-[2.5rem]">
+                    <ShieldCheck className="w-8 h-8 text-yellow-500 mb-4" />
+                    <h3 className="text-lg font-black uppercase tracking-tighter mb-2">Fair Play</h3>
+                    <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest leading-loose">
+                        Each spin is cryptographically secured. You can verify the result using the server hash and your client seed.
+                    </p>
+                </div>
+                <div className="p-8 bg-[#1a2c38] border border-gray-800 rounded-[2.5rem]">
+                    <Sparkles className="w-8 h-8 text-yellow-500 mb-4" />
+                    <h3 className="text-lg font-black uppercase tracking-tighter mb-2">Legendary Tier</h3>
+                    <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest leading-loose">
+                        The gold segments represent legendary rewards. Hit them to unlock massive payouts up to 500x.
+                    </p>
                 </div>
             </div>
 
-          </div>
         </div>
+
       </div>
+      
+      <style jsx>{`
+        .clip-path-pointer {
+            clip-path: polygon(0% 0%, 100% 0%, 50% 100%);
+        }
+      `}</style>
     </div>
   );
 };
+
+const Loader2 = ({ className }) => (
+    <RotateCw className={className} />
+);
 
 export default SpinWheel;

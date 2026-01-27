@@ -18,6 +18,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import LiveWins from '../components/LiveWins';
+import RedeemCodeSection from '../components/RedeemCodeSection';
 
 const GameCard = ({ title, description, path, icon: Icon, color, players }) => (
   <motion.div 
@@ -131,8 +132,11 @@ const Home = () => {
         </div>
       </section>
 
+      {/* Redeem Section */}
+      {isAuthenticated && <RedeemCodeSection />}
+
       {/* Game Grid */}
-      <section className="max-w-7xl mx-auto px-4 pb-32">
+      <section className="max-w-7xl mx-auto px-4 pb-32 mt-24">
         <div className="flex items-center justify-between mb-12">
             <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Featured Games</h2>
             <div className="flex gap-2">

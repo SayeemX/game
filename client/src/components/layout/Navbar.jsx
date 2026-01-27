@@ -69,7 +69,7 @@ const Navbar = () => {
             {isAuthenticated ? (
               <div className="flex items-center gap-4">
                 {/* Wallet */}
-                <div className="hidden md:flex items-center gap-3 bg-black/40 border border-gray-800 rounded-2xl p-1.5 pr-4">
+                <Link to="/wallet" className="hidden md:flex items-center gap-3 bg-black/40 border border-gray-800 hover:border-yellow-500/50 rounded-2xl p-1.5 pr-4 transition-all">
                     <div className="w-8 h-8 bg-yellow-500/10 rounded-xl flex items-center justify-center border border-yellow-500/20">
                         <Plus className="w-4 h-4 text-yellow-500" />
                     </div>
@@ -77,7 +77,7 @@ const Navbar = () => {
                         <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">Balance</span>
                         <span className="text-sm font-black text-white">${wallet.mainBalance.toFixed(2)}</span>
                     </div>
-                </div>
+                </Link>
 
                 {/* Profile Dropdown */}
                 <div className="relative">
@@ -104,6 +104,14 @@ const Navbar = () => {
                                     <p className="text-lg font-black text-white truncate">{user?.username}</p>
                                 </div>
                                 <div className="px-2">
+                                    {user?.role === 'admin' && (
+                                        <Link to="/admin" onClick={() => setIsProfileOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black text-yellow-500 hover:bg-yellow-500/10 rounded-2xl transition-all uppercase tracking-widest">
+                                            <Database className="w-4 h-4" /> Command Center
+                                        </Link>
+                                    )}
+                                    <Link to="/wallet" onClick={() => setIsProfileOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black text-gray-400 hover:text-white hover:bg-white/5 rounded-2xl transition-all uppercase tracking-widest">
+                                        <WalletIcon className="w-4 h-4" /> My Wallet
+                                    </Link>
                                     <Link to="/profile" onClick={() => setIsProfileOpen(false)} className="flex items-center gap-3 px-4 py-3 text-xs font-black text-gray-400 hover:text-white hover:bg-white/5 rounded-2xl transition-all uppercase tracking-widest">
                                         <UserIcon className="w-4 h-4" /> Your Profile
                                     </Link>
@@ -151,6 +159,12 @@ const Navbar = () => {
             >
                 <div className="px-4 py-8 space-y-6">
                     <div className="flex flex-col gap-4">
+                        {user?.role === 'admin' && (
+                            <Link to="/admin" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-yellow-500 uppercase tracking-widest">Admin Panel</Link>
+                        )}
+                        {isAuthenticated && (
+                            <Link to="/wallet" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">My Wallet</Link>
+                        )}
                         <Link to="/spin" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Spin</Link>
                         <Link to="/bird-shooting" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Shoot</Link>
                         <Link to="/" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Leaderboard</Link>

@@ -52,6 +52,7 @@ app.use('/api/spin', require('./routes/spin'));
 app.use('/api/games', require('./routes/games'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/redeem', require('./routes/redeem'));
 
 // Socket.io setup
 // require('./socket')(io); // Will create this next

@@ -7,7 +7,7 @@ const transactionSchema = new mongoose.Schema({
     enum: [
       'deposit', 'withdrawal', 'spin_bet', 'spin_win', 
       'game_bet', 'game_win', 'bonus', 'referral', 
-      'admin_add', 'admin_deduct'
+      'admin_add', 'admin_deduct', 'recharge'
     ],
     required: true 
   },

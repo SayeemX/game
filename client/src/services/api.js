@@ -61,7 +61,23 @@ export const gamesAPI = {
 export const paymentAPI = {
   deposit: (data) => api.post('/payment/deposit', data),
   withdraw: (data) => api.post('/payment/withdraw', data),
+  recharge: (data) => api.post('/payment/recharge', data),
+  history: () => api.get('/payment/history'),
   methods: () => api.get('/payment/methods')
+};
+
+export const redeemAPI = {
+  redeem: (code) => api.post('/redeem', { code })
+};
+
+export const adminAPI = {
+  getStats: () => api.get('/admin/stats'),
+  getUsers: () => api.get('/admin/users'),
+  updateBalance: (data) => api.post('/admin/users/update-balance', data),
+  getCodes: () => api.get('/admin/redeem-codes'),
+  createCode: (data) => api.post('/admin/redeem-codes', data),
+  getSpinConfig: () => api.get('/admin/spin-config'),
+  updateSpinConfig: (data) => api.post('/admin/spin-config', data)
 };
 
 export default api;
