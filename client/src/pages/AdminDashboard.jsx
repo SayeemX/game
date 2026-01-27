@@ -29,7 +29,7 @@ const AdminDashboard = () => {
 
   // Form states
   const [balanceForm, setBalanceForm] = useState({ userId: '', amount: '', type: 'main', description: '' });
-  const [codeForm, setCodeForm] = useState({ code: '', rewardType: 'BALANCE', rewardValue: '', maxRedemptions: 1, expiresAt: '' });
+  const [codeForm, setCodeForm] = useState({ code: '', rewardType: 'SPIN_CREDIT', rewardValue: '', maxRedemptions: 1, expiresAt: '' });
   const [formLoading, setFormLoading] = useState(false);
   const [formStatus, setFormStatus] = useState({ type: '', message: '' });
 
@@ -277,7 +277,16 @@ const AdminDashboard = () => {
                             <h2 className="text-xl font-black uppercase tracking-tighter mb-6">Create Redeem Code</h2>
                             <form onSubmit={handleCreateCode} className="space-y-4">
                                 <div>
-                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Code String</label>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Code String</label>
+                                        <button 
+                                            type="button"
+                                            onClick={() => setCodeForm({ ...codeForm, code: Math.random().toString(36).substring(2, 10).toUpperCase() })}
+                                            className="text-[8px] font-black text-yellow-500 uppercase tracking-widest hover:underline"
+                                        >
+                                            Generate Random
+                                        </button>
+                                    </div>
                                     <input 
                                         type="text" 
                                         className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-black uppercase tracking-widest outline-none focus:border-yellow-500"
@@ -289,25 +298,36 @@ const AdminDashboard = () => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Reward Type</label>
+                                        <select 
+                                            className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
+                                            value={codeForm.rewardType}
+                                            onChange={e => setCodeForm({ ...codeForm, rewardType: e.target.value })}
+                                        >
+                                            <option value="SPIN_CREDIT">Free Spins</option>
+                                            <option value="BALANCE">Bonus Balance</option>
+                                        </select>
+                                    </div>
+                                    <div>
                                         <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Value</label>
                                         <input 
                                             type="number"
                                             className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
                                             value={codeForm.rewardValue}
                                             onChange={e => setCodeForm({ ...codeForm, rewardValue: e.target.value })}
-                                            placeholder="100"
+                                            placeholder="1"
                                             required
                                         />
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Max Redemptions</label>
-                                        <input 
-                                            type="number"
-                                            className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
-                                            value={codeForm.maxRedemptions}
-                                            onChange={e => setCodeForm({ ...codeForm, maxRedemptions: e.target.value })}
-                                        />
-                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Max Redemptions</label>
+                                    <input 
+                                        type="number"
+                                        className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
+                                        value={codeForm.maxRedemptions}
+                                        onChange={e => setCodeForm({ ...codeForm, maxRedemptions: e.target.value })}
+                                    />
                                 </div>
                                 <button type="submit" disabled={formLoading} className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl uppercase tracking-widest transition-all">
                                     {formLoading ? <Loader2 className="animate-spin mx-auto w-5 h-5" /> : 'Generate Code'}
