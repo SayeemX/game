@@ -31,7 +31,7 @@ export default class SniperScene extends Phaser.Scene {
   preload() {
     // UI & Environment Assets
     this.load.image('crosshair', 'assets/ui/crosshair.png');
-    this.load.image('arrow', 'assets/projectiles/arrow.png');
+    this.load.image('arrow', 'assets/projectiles/arrowx.png');
     this.load.image('pellet', 'assets/projectiles/pellet.png');
     this.load.image('sky', 'assets/environment/sky_day.png');
     this.load.image('trees', 'assets/environment/trees.png');
@@ -40,7 +40,7 @@ export default class SniperScene extends Phaser.Scene {
     this.load.image('spark', 'assets/effects/spark.png');
     
     // Bird Assets - Spritesheets for animations
-    const birdTypes = ['eagle', 'pigeon', 'sparrow', 'rare', 'crow', 'phoenix'];
+    const birdTypes = ['eagle', 'pigeon', 'sparrow', 'rare'];
     birdTypes.forEach(type => {
         if (type === 'eagle') {
             // Eagle: 64x192 total -> 64x32 per frame, 6 frames

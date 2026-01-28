@@ -9,6 +9,7 @@ const { Server } = require('socket.io');
 const User = require('./models/User');
 const Transaction = require('./models/Transaction');
 const BirdMatch = require('./models/BirdMatch');
+const Game = require('./models/Game');
 const birdShootingEngine = require('./services/BirdShootingEngine');
 
 const app = express();
