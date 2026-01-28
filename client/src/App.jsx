@@ -29,7 +29,7 @@ const AppContent = () => {
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-white font-sans selection:bg-yellow-500 selection:text-black">
-      <Router basename="/GameX">
+      <Router>
         <Navbar />
         <main>
           <Routes>
