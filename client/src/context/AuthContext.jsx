@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
-import axios from 'axios';
 import { io } from 'socket.io-client';
+import api from '../services/api';
 
 export const AuthContext = createContext();
 
@@ -12,7 +12,6 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (token) {
-      axios.defaults.headers.common['x-auth-token'] = token;
       localStorage.setItem('token', token);
       fetchUser();
 
@@ -27,7 +26,6 @@ export const AuthProvider = ({ children }) => {
           newSocket.disconnect();
       };
     } else {
-      delete axios.defaults.headers.common['x-auth-token'];
       localStorage.removeItem('token');
       setLoading(false);
       if (socket) {
@@ -39,8 +37,8 @@ export const AuthProvider = ({ children }) => {
 
   const fetchUser = async () => {
     try {
-      const res = await axios.get('/api/auth/user');
-      setUser(res.data);
+      const res = await api.get('/auth/me'); // Updated to match api.js endpoints
+      setUser(res.data.user);
     } catch (err) {
       console.error(err);
       logout();
@@ -50,13 +48,13 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (username, password) => {
-    const res = await axios.post('/api/auth/login', { username, password });
+    const res = await api.post('/auth/login', { username, password });
     setToken(res.data.token);
     setUser(res.data.user);
   };
 
   const register = async (username, password) => {
-    const res = await axios.post('/api/auth/register', { username, password });
+    const res = await api.post('/auth/register', { username, password });
     setToken(res.data.token);
   };
 
