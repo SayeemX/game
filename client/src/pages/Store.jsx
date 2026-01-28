@@ -1,0 +1,189 @@
+import React, { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  ShoppingBag, 
+  Zap, 
+  Target, 
+  ShieldCheck, 
+  Lock, 
+  CheckCircle2, 
+  Loader2, 
+  AlertCircle,
+  Coins,
+  ArrowRight,
+  Sparkles
+} from 'lucide-react';
+import { shopAPI } from '../services/api';
+import { updateWallet, setUserData } from '../redux/slices/userSlice';
+
+const Store = () => {
+  const dispatch = useDispatch();
+  const { wallet } = useSelector(state => state.user);
+  
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [buying, setBuying] = useState(null); // ID of item being bought
+  const [status, setStatus] = useState({ type: '', message: '' });
+
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+  const fetchItems = async () => {
+    try {
+      const res = await shopAPI.getItems();
+      setItems(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBuy = async (itemId) => {
+    setBuying(itemId);
+    setStatus({ type: '', message: '' });
+    try {
+      const res = await shopAPI.buyItem(itemId);
+      dispatch(updateWallet(res.data.wallet));
+      // Optionally update full user data to sync inventory
+      setStatus({ type: 'success', message: res.data.message });
+      fetchItems();
+    } catch (err) {
+      setStatus({ type: 'error', message: err.response?.data?.error || 'Purchase failed' });
+    } finally {
+      setBuying(null);
+    }
+  };
+
+  const handleEquip = async (itemKey) => {
+    try {
+      const res = await shopAPI.equipItem(itemKey);
+      setStatus({ type: 'success', message: res.data.message });
+      fetchItems();
+    } catch (err) {
+      setStatus({ type: 'error', message: 'Failed to equip' });
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0d1117] text-white pt-12 pb-24">
+      <div className="max-w-7xl mx-auto px-4">
+        
+        {/* Header */}
+        <div className="bg-[#1a2c38] border border-gray-800 rounded-[2rem] sm:rounded-[3rem] p-8 sm:p-12 mb-12 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
+                <ShoppingBag className="w-64 h-64 text-[#3bc117]" />
+            </div>
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+                <div className="text-center md:text-left">
+                    <div className="flex items-center gap-4 mb-4 justify-center md:justify-start">
+                        <div className="w-12 h-12 bg-[#3bc117]/10 rounded-2xl flex items-center justify-center border border-[#3bc117]/20">
+                            <ShoppingBag className="w-6 h-6 text-[#3bc117]" />
+                        </div>
+                        <h1 className="text-4xl sm:text-5xl font-black uppercase tracking-tighter italic">Armory <span className="text-[#3bc117]">Store</span></h1>
+                    </div>
+                    <p className="text-gray-500 font-bold uppercase tracking-[0.3em] text-xs">Upgrade your arsenal for legendary precision</p>
+                </div>
+                <div className="bg-black/40 border border-gray-800 p-6 rounded-3xl backdrop-blur-xl min-w-[200px] text-center md:text-right">
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Available Balance</p>
+                    <p className="text-3xl font-black text-[#3bc117]">{wallet.mainBalance.toFixed(2)} TRX</p>
+                </div>
+            </div>
+        </div>
+
+        {/* Store Grid */}
+        {loading ? (
+            <div className="flex justify-center py-20">
+                <Loader2 className="w-12 h-12 text-[#3bc117] animate-spin" />
+            </div>
+        ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <AnimatePresence>
+                    {items.map((item, idx) => (
+                        <motion.div 
+                            key={item._id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: idx * 0.1 }}
+                            className={`bg-[#1a2c38] border-2 rounded-[2rem] p-6 flex flex-col transition-all ${item.isEquipped ? 'border-[#3bc117] shadow-[0_0_30px_rgba(59,193,23,0.1)]' : 'border-gray-800'}`}
+                        >
+                            <div className="relative mb-6">
+                                <div className={`aspect-square rounded-2xl bg-black/40 flex items-center justify-center border border-gray-800/50 group overflow-hidden`}>
+                                    <Target className={`w-16 h-16 transition-transform duration-500 ${item.isEquipped ? 'text-[#3bc117] scale-110' : 'text-gray-700'}`} />
+                                    {item.isOwned && !item.isEquipped && (
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <button onClick={() => handleEquip(item.key)} className="px-6 py-2 bg-white text-black font-black rounded-xl text-xs uppercase tracking-widest">Equip Now</button>
+                                        </div>
+                                    )}
+                                </div>
+                                {item.isEquipped && (
+                                    <div className="absolute top-2 right-2 px-3 py-1 bg-[#3bc117] text-black font-black text-[8px] rounded-lg uppercase tracking-widest">Active</div>
+                                )}
+                            </div>
+
+                            <div className="flex-1 mb-6">
+                                <h3 className="text-xl font-black uppercase tracking-tighter mb-2">{item.name}</h3>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-4">{item.type}</p>
+                                
+                                <div className="space-y-3">
+                                    <StatRow label="Damage" value={item.damage} max={3} color="bg-red-500" />
+                                    <StatRow label="Accuracy" value={item.accuracy * 100 + '%'} max={100} color="bg-[#3bc117]" />
+                                    <StatRow label="Reload" value={item.fireRate + 'ms'} max={1000} reverse color="bg-blue-500" />
+                                </div>
+                            </div>
+
+                            {item.isOwned ? (
+                                <button 
+                                    disabled={item.isEquipped}
+                                    onClick={() => handleEquip(item.key)}
+                                    className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${item.isEquipped ? 'bg-gray-800 text-gray-500' : 'bg-white text-black hover:bg-gray-200'}`}
+                                >
+                                    {item.isEquipped ? 'Equipped' : 'Select Gear'}
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={() => handleBuy(item._id)}
+                                    disabled={buying === item._id || wallet.mainBalance < item.price}
+                                    className="w-full py-4 bg-[#3bc117] hover:bg-[#45d61d] disabled:bg-gray-800 disabled:text-gray-500 text-black font-black rounded-xl text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                >
+                                    {buying === item._id ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                                        <>Buy for {item.price} TRX <Sparkles className="w-4 h-4" /></>
+                                    )}
+                                </button>
+                            )}
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
+            </div>
+        )}
+
+        {status.message && (
+            <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} className={`fixed bottom-8 left-1/2 -translate-x-1/2 p-4 rounded-2xl flex items-center gap-3 font-bold text-sm uppercase tracking-widest shadow-2xl z-50 ${status.type === 'success' ? 'bg-[#3bc117] text-black' : 'bg-red-500 text-white'}`}>
+                {status.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                {status.message}
+            </motion.div>
+        )}
+
+      </div>
+    </div>
+  );
+};
+
+const StatRow = ({ label, value, max, color, reverse = false }) => {
+    const percentage = typeof value === 'string' ? parseInt(value) : (value / max) * 100;
+    return (
+        <div>
+            <div className="flex justify-between text-[8px] font-black uppercase tracking-widest mb-1.5 text-gray-500">
+                <span>{label}</span>
+                <span className="text-white">{value}</span>
+            </div>
+            <div className="h-1 bg-black/40 rounded-full overflow-hidden">
+                <div className={`h-full ${color} transition-all duration-1000`} style={{ width: `${reverse ? 100 - (percentage/max*100) : percentage}%` }}></div>
+            </div>
+        </div>
+    );
+};
+
+export default Store;

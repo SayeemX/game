@@ -58,7 +58,7 @@ const Home = () => {
       {/* Live Wins Banner */}
       <LiveWins />
 
-      {/* Hero Section - SayeemX GIFT */}
+      {/* Hero Section - GameX GIFT */}
       <section className="relative pt-12 pb-24 overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-full pointer-events-none opacity-20">
             <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-yellow-500/20 to-transparent blur-3xl rounded-full"></div>
@@ -72,7 +72,7 @@ const Home = () => {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[10px] font-black uppercase tracking-[0.2em] mb-8"
             >
               <Gift className="w-4 h-4" />
-              {isAuthenticated ? `WELCOME BACK, ${user?.username} • ELITE STATUS ACTIVE` : 'SayeemX GIFT • EXCLUSIVE ARENA REWARDS'}
+              {isAuthenticated ? `WELCOME BACK, ${user?.username} • ELITE STATUS ACTIVE` : 'GameX GIFT • EXCLUSIVE ARENA REWARDS'}
             </motion.div>
             
             <motion.h1 
@@ -101,7 +101,7 @@ const Home = () => {
             >
                 {isAuthenticated 
                     ? "Your multipliers are primed for legendary wins. Use your secret gift codes above to boost your arsenal."
-                    : "Join SayeemX for a premium, provably fair gaming experience with instant rewards and elite challenges."
+                    : "Join GameX for a premium, provably fair gaming experience with instant rewards and elite challenges."
                 }
             </motion.p>
             
@@ -162,15 +162,15 @@ const Home = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
             <GameCard 
                 title="Fortune Spin"
-                description="The ultimate prize wheel. Spin for a chance to win massive rewards and exclusive SayeemX GIFT bonuses."
+                description="The ultimate prize wheel. Spin for a chance to win massive rewards and exclusive GameX GIFT bonuses."
                 path="/spin"
                 icon={Sparkles}
                 color="from-yellow-400 via-orange-500 to-red-600"
                 players="4.8k"
             />
             <GameCard 
-                title="SayeemX Sniper"
-                description="Test your precision in this fast-paced challenge. High accuracy earns legendary SayeemX multipliers."
+                title="GameX Sniper"
+                description="Test your precision in this fast-paced challenge. High accuracy earns legendary GameX multipliers."
                 path="/bird-shooting"
                 icon={Target}
                 color="from-cyan-400 via-blue-500 to-indigo-600"
@@ -207,12 +207,12 @@ const Home = () => {
                 <div className="p-8 rounded-3xl bg-[#1a2c38]/30 border border-gray-800">
                     <Zap className="w-10 h-10 text-yellow-500 mb-6" />
                     <h3 className="text-xl font-black text-white mb-2 uppercase tracking-tighter">Instant Payout</h3>
-                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest leading-loose">Winnings are credited to your SayeemX wallet instantly after every win.</p>
+                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest leading-loose">Winnings are credited to your GameX wallet instantly after every win.</p>
                 </div>
                 <div className="p-8 rounded-3xl bg-[#1a2c38]/30 border border-gray-800">
                     <Users className="w-10 h-10 text-yellow-500 mb-6" />
                     <h3 className="text-xl font-black text-white mb-2 uppercase tracking-tighter">Elite Club</h3>
-                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest leading-loose">Join high-stakes tournaments and exclusive SayeemX GIFT drops.</p>
+                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest leading-loose">Join high-stakes tournaments and exclusive GameX GIFT drops.</p>
                 </div>
                 <div className="p-8 rounded-3xl bg-[#1a2c38]/30 border border-gray-800">
                     <TrendingUp className="w-10 h-10 text-yellow-500 mb-6" />

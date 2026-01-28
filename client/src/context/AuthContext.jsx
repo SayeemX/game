@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 
 export const AuthContext = createContext();
 
@@ -7,16 +8,32 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
+  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common['x-auth-token'] = token;
       localStorage.setItem('token', token);
       fetchUser();
+
+      // Initialize Socket
+      const socketUrl = window.location.origin.replace('3000', '3001');
+      const newSocket = io(socketUrl, {
+          auth: { token }
+      });
+      setSocket(newSocket);
+
+      return () => {
+          newSocket.disconnect();
+      };
     } else {
       delete axios.defaults.headers.common['x-auth-token'];
       localStorage.removeItem('token');
       setLoading(false);
+      if (socket) {
+          socket.disconnect();
+          setSocket(null);
+      }
     }
   }, [token]);
 
@@ -53,7 +70,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, loading, refreshUser }}>
+    <AuthContext.Provider value={{ user, socket, login, register, logout, loading, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

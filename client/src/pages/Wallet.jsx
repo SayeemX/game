@@ -108,50 +108,50 @@ const Wallet = () => {
       <div className="max-w-7xl mx-auto px-4">
         
         {/* Wallet Hero */}
-        <div className="bg-[#1a2c38] border border-gray-800 rounded-[3rem] p-10 mb-12 relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
+        <div className="bg-[#1a2c38] border border-gray-800 rounded-[2rem] sm:rounded-[3rem] p-6 sm:p-10 mb-8 sm:mb-12 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none hidden sm:block">
                 <WalletIcon className="w-64 h-64 text-yellow-500" />
             </div>
-            <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
-                <div>
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-12 h-12 bg-yellow-500 rounded-2xl flex items-center justify-center shadow-lg shadow-yellow-500/20">
-                            <WalletIcon className="w-6 h-6 text-black" />
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6 sm:gap-8 relative z-10">
+                <div className="text-center md:text-left">
+                    <div className="flex flex-col sm:flex-row items-center gap-3 mb-4">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-yellow-500 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-yellow-500/20">
+                            <WalletIcon className="w-5 h-5 sm:w-6 sm:h-6 text-black" />
                         </div>
-                        <h1 className="text-4xl font-black uppercase tracking-tighter">My Wallet</h1>
+                        <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tighter">My Wallet</h1>
                     </div>
-                    <p className="text-gray-500 font-bold uppercase tracking-widest text-sm">Manage your funds, deposits, and elite rewards</p>
+                    <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] sm:text-sm">Manage your funds and elite rewards</p>
                 </div>
-                <div className="flex gap-8">
+                <div className="flex gap-6 sm:gap-8 w-full sm:w-auto justify-center sm:justify-end">
                     <div className="text-center md:text-right">
-                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">Main Balance</p>
-                        <p className="text-4xl font-black text-white">${wallet.mainBalance.toFixed(2)}</p>
+                        <p className="text-[8px] sm:text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">Main Balance</p>
+                        <p className="text-2xl sm:text-4xl font-black text-white">{wallet.mainBalance.toFixed(2)} TRX</p>
                     </div>
                     <div className="text-center md:text-right">
-                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">Bonus Balance</p>
-                        <p className="text-2xl font-black text-yellow-500">${wallet.bonusBalance.toFixed(2)}</p>
+                        <p className="text-[8px] sm:text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">Bonus Balance</p>
+                        <p className="text-xl sm:text-2xl font-black text-yellow-500">{wallet.bonusBalance.toFixed(2)} TRX</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-12">
             {/* Action Panel */}
-            <div className="lg:col-span-2 space-y-8">
-                <div className="bg-[#1a2c38] border border-gray-800 rounded-[3rem] overflow-hidden">
+            <div className="lg:col-span-2 space-y-6 sm:space-y-8">
+                <div className="bg-[#1a2c38] border border-gray-800 rounded-[2rem] sm:rounded-[3rem] overflow-hidden">
                     <div className="flex border-b border-gray-800">
                         {['deposit', 'withdraw', 'recharge'].map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => { setActiveTab(tab); setStatus({type:'', message:''}); }}
-                                className={`flex-1 py-6 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === tab ? 'bg-yellow-500 text-black' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                                className={`flex-1 py-4 sm:py-6 text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === tab ? 'bg-yellow-500 text-black' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
                             >
                                 {tab}
                             </button>
                         ))}
                     </div>
 
-                    <div className="p-10">
+                    <div className="p-6 sm:p-10">
                         <AnimatePresence mode="wait">
                             {activeTab === 'deposit' && (
                                 <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-10}}>
@@ -176,15 +176,20 @@ const Wallet = () => {
                                                     {depositData.method === 'trx' && <div className="w-3 h-3 bg-yellow-500 rounded-full" />}
                                                 </div>
                                             </div>
-                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest truncate">Address: TY123...456</p>
+                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest truncate">TRC20 Address: TY123...456</p>
                                         </div>
                                     </div>
 
                                     <form onSubmit={handleDeposit} className="space-y-6">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div>
-                                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">Amount (USD)</label>
-                                                <input type="number" required placeholder="5.00" className="w-full p-4 bg-black border border-gray-800 rounded-2xl outline-none focus:border-yellow-500 font-bold" value={depositData.amount} onChange={e => setDepositData({...depositData, amount: e.target.value})} />
+                                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">Amount (TRX)</label>
+                                                <input type="number" required min="0.01" step="0.01" placeholder="50.00" className="w-full p-4 bg-black border border-gray-800 rounded-2xl outline-none focus:border-yellow-500 font-bold" value={depositData.amount} onChange={e => setDepositData({...depositData, amount: e.target.value})} />
+                                                {depositData.amount && (depositData.method === 'bkash' || depositData.method === 'nagad') && (
+                                                    <p className="text-[10px] font-black text-yellow-500 mt-2 uppercase tracking-widest">
+                                                        Please send: {(parseFloat(depositData.amount) * 15).toFixed(2)} BDT
+                                                    </p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">{depositData.method === 'trx' ? 'Transaction Hash' : 'Transaction ID'}</label>
@@ -212,15 +217,20 @@ const Wallet = () => {
                                     <form onSubmit={handleWithdraw} className="space-y-6">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div>
-                                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">Amount (USD)</label>
-                                                <input type="number" required placeholder="10.00" className="w-full p-4 bg-black border border-gray-800 rounded-2xl outline-none focus:border-yellow-500 font-bold" value={withdrawData.amount} onChange={e => setWithdrawData({...withdrawData, amount: e.target.value})} />
+                                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">Amount (TRX)</label>
+                                                <input type="number" required min="0.01" step="0.01" placeholder="100.00" className="w-full p-4 bg-black border border-gray-800 rounded-2xl outline-none focus:border-yellow-500 font-bold" value={withdrawData.amount} onChange={e => setWithdrawData({...withdrawData, amount: e.target.value})} />
+                                                {withdrawData.amount && (withdrawData.method === 'bkash' || withdrawData.method === 'nagad') && (
+                                                    <p className="text-[10px] font-black text-yellow-500 mt-2 uppercase tracking-widest">
+                                                        Est. Receive: {(parseFloat(withdrawData.amount) * 15).toFixed(2)} BDT
+                                                    </p>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">Withdrawal Method</label>
                                                 <select className="w-full p-4 bg-black border border-gray-800 rounded-2xl outline-none focus:border-yellow-500 font-bold" value={withdrawData.method} onChange={e => setWithdrawData({...withdrawData, method: e.target.value})}>
                                                     <option value="bkash">bKash (Personal)</option>
                                                     <option value="nagad">Nagad (Personal)</option>
-                                                    <option value="trx">TRX Wallet</option>
+                                                    <option value="trx">TRX Wallet (TRC20)</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -258,8 +268,8 @@ const Wallet = () => {
                                             </div>
                                         </div>
                                         <div>
-                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">Amount (USD)</label>
-                                            <input type="number" required placeholder="1.00" className="w-full p-4 bg-black border border-gray-800 rounded-2xl outline-none focus:border-yellow-500 font-bold" value={rechargeData.amount} onChange={e => setRechargeData({...rechargeData, amount: e.target.value})} />
+                                            <label className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 block">Amount (TRX)</label>
+                                            <input type="number" required min="10" step="1" placeholder="20.00" className="w-full p-4 bg-black border border-gray-800 rounded-2xl outline-none focus:border-yellow-500 font-bold" value={rechargeData.amount} onChange={e => setRechargeData({...rechargeData, amount: e.target.value})} />
                                         </div>
                                         <button disabled={formLoading} className="w-full py-5 bg-blue-500 hover:bg-blue-400 text-white font-black rounded-2xl uppercase tracking-widest transition-all shadow-xl shadow-blue-500/10 flex items-center justify-center gap-2">
                                             {formLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Perform Recharge'}
@@ -278,29 +288,29 @@ const Wallet = () => {
                     </div>
                 </div>
 
-                <div className="bg-[#1a2c38] border border-gray-800 rounded-[3rem] p-10">
-                    <h2 className="text-xl font-black uppercase tracking-tighter mb-8 flex items-center gap-3">
-                        <History className="w-6 h-6 text-yellow-500" /> Transaction History
+                <div className="bg-[#1a2c38] border border-gray-800 rounded-[2rem] sm:rounded-[3rem] p-6 sm:p-10">
+                    <h2 className="text-lg sm:text-xl font-black uppercase tracking-tighter mb-6 sm:mb-8 flex items-center gap-3">
+                        <History className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" /> Transaction History
                     </h2>
                     {loading ? <Loader2 className="animate-spin w-8 h-8 mx-auto text-gray-600" /> : (
-                        <div className="space-y-4">
-                            {history.length === 0 ? <p className="text-center text-gray-500 font-bold py-10 uppercase tracking-widest text-xs">No transactions yet</p> : (
+                        <div className="space-y-3 sm:space-y-4">
+                            {history.length === 0 ? <p className="text-center text-gray-500 font-bold py-10 uppercase tracking-widest text-[10px]">No transactions yet</p> : (
                                 history.map(tx => (
-                                    <div key={tx._id} className="flex items-center justify-between p-6 bg-black/20 border border-gray-800/50 rounded-2xl">
-                                        <div className="flex items-center gap-4">
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${tx.type === 'deposit' || tx.type === 'spin_win' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                                                {tx.type === 'deposit' || tx.type === 'spin_win' ? <ArrowUpCircle className="w-5 h-5" /> : <ArrowDownCircle className="w-5 h-5" />}
+                                    <div key={tx._id} className="flex items-center justify-between p-4 sm:p-6 bg-black/20 border border-gray-800/50 rounded-2xl">
+                                        <div className="flex items-center gap-3 sm:gap-4">
+                                            <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center ${tx.type === 'deposit' || tx.type === 'spin_win' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                                {tx.type === 'deposit' || tx.type === 'spin_win' ? <ArrowUpCircle className="w-4 h-4 sm:w-5 sm:h-5" /> : <ArrowDownCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
                                             </div>
                                             <div>
-                                                <p className="text-sm font-black uppercase tracking-tighter">{tx.description || tx.type.replace('_', ' ')}</p>
-                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{new Date(tx.createdAt).toLocaleString()}</p>
+                                                <p className="text-xs sm:text-sm font-black uppercase tracking-tighter truncate max-w-[120px] sm:max-w-none">{tx.description || tx.type.replace('_', ' ')}</p>
+                                                <p className="text-[8px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest">{new Date(tx.createdAt).toLocaleDateString()}</p>
                                             </div>
                                         </div>
                                         <div className="text-right">
-                                            <p className={`text-lg font-black ${tx.type === 'deposit' || tx.type === 'spin_win' ? 'text-green-500' : 'text-red-500'}`}>
-                                                {tx.type === 'deposit' || tx.type === 'spin_win' ? '+' : '-'}${tx.amount.toFixed(2)}
+                                            <p className={`text-sm sm:text-lg font-black ${tx.type === 'deposit' || tx.type === 'spin_win' ? 'text-green-500' : 'text-red-500'}`}>
+                                                {tx.type === 'deposit' || tx.type === 'spin_win' ? '+' : '-'}{tx.amount.toFixed(2)} TRX
                                             </p>
-                                            <p className={`text-[8px] font-black uppercase tracking-[0.2em] ${tx.status === 'completed' ? 'text-green-500' : tx.status === 'pending' ? 'text-yellow-500' : 'text-red-500'}`}>
+                                            <p className={`text-[7px] sm:text-[8px] font-black uppercase tracking-[0.2em] ${tx.status === 'completed' ? 'text-green-500' : tx.status === 'pending' ? 'text-yellow-500' : 'text-red-500'}`}>
                                                 {tx.status}
                                             </p>
                                         </div>
@@ -326,7 +336,7 @@ const Wallet = () => {
                 <div className="bg-[#1a2c38] border border-gray-800 rounded-[3rem] p-10">
                     <ShieldCheck className="w-10 h-10 text-yellow-500 mb-6" />
                     <h3 className="text-xl font-black uppercase tracking-tighter mb-2">Secure Wallet</h3>
-                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest leading-loose">All transactions are encrypted and monitored for your safety. SayeemX uses bank-grade security protocols.</p>
+                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest leading-loose">All transactions are encrypted and monitored for your safety. GameX uses bank-grade security protocols.</p>
                 </div>
 
                 <div className="bg-[#1a2c38] border border-gray-800 rounded-[3rem] p-10">

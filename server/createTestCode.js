@@ -8,7 +8,7 @@ const createCode = async () => {
     console.log('Connected to MongoDB');
 
     const code = new RedeemCode({
-      code: 'SAYEEMX2026',
+      code: 'GAMEX2026',
       rewardType: 'BALANCE',
       rewardValue: 50,
       maxRedemptions: 100,
@@ -16,10 +16,10 @@ const createCode = async () => {
       expiresAt: new Date('2026-12-31')
     });
 
-    await RedeemCode.deleteMany({ code: 'SAYEEMX2026' }); // Clear old one if exists
+    await RedeemCode.deleteMany({ code: 'GAMEX2026' }); // Clear old one if exists
     await code.save();
     
-    console.log('✅ Test code created: SAYEEMX2026 ($50 Bonus)');
+    console.log('✅ Test code created: GAMEX2026 (50 TRX Bonus)');
     process.exit(0);
   } catch (err) {
     console.error(err);

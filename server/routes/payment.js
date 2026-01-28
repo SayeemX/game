@@ -4,26 +4,42 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 
+const TRX_TO_BDT_RATE = 15; // 1 TRX = 15 BDT
+
 // @route   POST api/payment/deposit
 // @desc    Handle deposit requests (Manual bKash/Nagad or TRX)
 router.post('/deposit', auth, async (req, res) => {
     const { amount, method, transactionId, senderNumber } = req.body;
     
     try {
-        if (!amount || amount <= 0) return res.status(400).json({ message: 'Invalid amount' });
+        const trxAmount = parseFloat(amount);
+        if (isNaN(trxAmount) || trxAmount <= 0) {
+            return res.status(400).json({ message: 'Invalid amount. Must be greater than 0.' });
+        }
+        let bdtAmount = 0;
+
+        // If the user entered amount in BDT for mobile banking, convert it to TRX
+        // Or if they entered TRX, we calculate what BDT they should have sent.
+        // Let's assume the user enters the TRX amount they WANT, and the UI tells them BDT.
+        if (method === 'bkash' || method === 'nagad') {
+            bdtAmount = trxAmount * TRX_TO_BDT_RATE;
+        }
 
         const transaction = new Transaction({
             userId: req.user.id,
             type: 'deposit',
-            amount: parseFloat(amount),
-            status: 'pending', // Deposits usually need admin approval in manual systems
-            paymentMethod: method, // 'bkash', 'nagad', 'trx'
+            amount: trxAmount,
+            currency: 'TRX',
+            status: 'pending',
+            paymentMethod: method,
             transactionId: transactionId,
             metadata: {
                 senderNumber: senderNumber,
-                timestamp: new Date()
+                timestamp: new Date(),
+                bdtAmount: bdtAmount > 0 ? bdtAmount : null,
+                conversionRate: bdtAmount > 0 ? TRX_TO_BDT_RATE : null
             },
-            description: `Deposit via ${method.toUpperCase()}`
+            description: `Deposit via ${method.toUpperCase()}${bdtAmount > 0 ? ` (${bdtAmount} BDT)` : ''}`
         });
 
         await transaction.save();
@@ -40,24 +56,37 @@ router.post('/withdraw', auth, async (req, res) => {
     const { amount, method, accountDetails } = req.body;
     
     try {
+        const trxAmount = parseFloat(amount);
+        if (isNaN(trxAmount) || trxAmount <= 0) {
+            return res.status(400).json({ message: 'Invalid amount. Must be greater than 0.' });
+        }
+
         const user = await User.findById(req.user.id);
-        if (user.wallet.mainBalance < amount) {
+        if (user.wallet.mainBalance < trxAmount) {
             return res.status(400).json({ message: 'Insufficient balance' });
         }
 
         // Deduct balance immediately for withdrawal request
-        user.wallet.mainBalance -= parseFloat(amount);
+        user.wallet.mainBalance -= trxAmount;
         
+        let bdtAmount = 0;
+        if (method === 'bkash' || method === 'nagad') {
+            bdtAmount = trxAmount * TRX_TO_BDT_RATE;
+        }
+
         const transaction = new Transaction({
             userId: req.user.id,
             type: 'withdrawal',
-            amount: parseFloat(amount),
+            amount: trxAmount,
+            currency: 'TRX',
             status: 'pending',
             paymentMethod: method,
             metadata: {
-                accountDetails: accountDetails
+                accountDetails: accountDetails,
+                conversionRate: method !== 'trx' ? TRX_TO_BDT_RATE : null,
+                bdtAmount: bdtAmount > 0 ? bdtAmount : null
             },
-            description: `Withdrawal to ${method.toUpperCase()}: ${accountDetails}`
+            description: `Withdrawal to ${method.toUpperCase()}: ${accountDetails}${bdtAmount > 0 ? ` (${bdtAmount} BDT)` : ''}`
         });
 
         await user.save();
@@ -75,13 +104,18 @@ router.post('/recharge', auth, async (req, res) => {
     const { phoneNumber, operator, amount } = req.body;
 
     try {
+        const trxAmount = parseFloat(amount);
+        if (isNaN(trxAmount) || trxAmount <= 0) {
+            return res.status(400).json({ message: 'Invalid amount. Must be greater than 0.' });
+        }
+
         const user = await User.findById(req.user.id);
-        if (user.wallet.mainBalance < amount) {
+        if (user.wallet.mainBalance < trxAmount) {
             return res.status(400).json({ message: 'Insufficient balance for recharge' });
         }
 
         // Deduct balance
-        user.wallet.mainBalance -= parseFloat(amount);
+        user.wallet.mainBalance -= trxAmount;
 
         const transaction = new Transaction({
             userId: req.user.id,

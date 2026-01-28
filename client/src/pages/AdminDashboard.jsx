@@ -52,6 +52,9 @@ const AdminDashboard = () => {
       } else if (activeTab === 'spin') {
         const res = await adminAPI.getSpinConfig();
         setSpinConfig(res.data);
+      } else if (activeTab === 'bird') {
+        const res = await adminAPI.getBirdConfig();
+        setBirdConfig(res.data);
       }
     } catch (err) {
       setError('Failed to fetch admin data');
@@ -71,6 +74,18 @@ const AdminDashboard = () => {
     try {
         await adminAPI.updateSpinConfig(spinConfig);
         setFormStatus({ type: 'success', message: 'Spin configuration saved!' });
+    } catch (err) {
+        setFormStatus({ type: 'error', message: 'Failed to save configuration' });
+    } finally {
+        setFormLoading(false);
+    }
+  };
+
+  const handleSaveBirdConfig = async () => {
+    setFormLoading(true);
+    try {
+        await adminAPI.updateBirdConfig(birdConfig);
+        setFormStatus({ type: 'success', message: 'Bird configuration saved!' });
     } catch (err) {
         setFormStatus({ type: 'error', message: 'Failed to save configuration' });
     } finally {
@@ -134,7 +149,7 @@ const AdminDashboard = () => {
             </div>
             
             <div className="flex bg-[#1a2c38] p-1.5 rounded-2xl border border-gray-800">
-                {['overview', 'users', 'codes', 'spin'].map(tab => (
+                {['overview', 'users', 'codes', 'spin', 'bird'].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -155,8 +170,8 @@ const AdminDashboard = () => {
                 {activeTab === 'overview' && stats && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <StatCard label="Total Users" value={stats.totalUsers} icon={Users} color="text-blue-500" />
-                        <StatCard label="Total Economy" value={`$${stats.totalBalance.toFixed(2)}`} icon={DollarSign} color="text-green-500" />
-                        <StatCard label="Bonus Pool" value={`$${stats.totalBonus.toFixed(2)}`} icon={Gift} color="text-purple-500" />
+                        <StatCard label="Total Economy" value={`${stats.totalBalance.toFixed(2)} TRX`} icon={DollarSign} color="text-green-500" />
+                        <StatCard label="Bonus Pool" value={`${stats.totalBonus.toFixed(2)} TRX`} icon={Gift} color="text-purple-500" />
                         <StatCard label="Transactions" value={stats.totalTransactions} icon={TrendingUp} color="text-yellow-500" />
                     </div>
                 )}
@@ -194,8 +209,8 @@ const AdminDashboard = () => {
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <div className="text-sm font-black text-white">${u.wallet.mainBalance.toFixed(2)}</div>
-                                                    <div className="text-[10px] text-yellow-500 font-bold">B: ${u.wallet.bonusBalance.toFixed(2)}</div>
+                                                    <div className="text-sm font-black text-white">{u.wallet.mainBalance.toFixed(2)} TRX</div>
+                                                    <div className="text-[10px] text-yellow-500 font-bold">B: {u.wallet.bonusBalance.toFixed(2)} TRX</div>
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <span className={`px-2 py-1 rounded text-[8px] font-black uppercase tracking-widest ${u.role === 'admin' ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
@@ -356,7 +371,7 @@ const AdminDashboard = () => {
                                         {codes.map(c => (
                                             <tr key={c._id}>
                                                 <td className="px-6 py-4 font-black uppercase tracking-widest text-yellow-500">{c.code}</td>
-                                                <td className="px-6 py-4 text-sm font-black">${c.rewardValue} {c.rewardType}</td>
+                                                <td className="px-6 py-4 text-sm font-black">{c.rewardValue} {c.rewardType === 'BALANCE' ? 'TRX' : c.rewardType}</td>
                                                 <td className="px-6 py-4 text-xs font-bold text-gray-400">{c.currentRedemptions} / {c.maxRedemptions}</td>
                                                 <td className="px-6 py-4">
                                                     <span className={`px-2 py-1 rounded text-[8px] font-black uppercase tracking-widest ${c.isActive ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
@@ -394,7 +409,8 @@ const AdminDashboard = () => {
                                             <th className="px-6 py-4">Display Name</th>
                                             <th className="px-6 py-4">Type</th>
                                             <th className="px-6 py-4">Value</th>
-                                            <th className="px-6 py-4">Probability (%)</th>
+                                            <th className="px-6 py-4">Item Key</th>
+                                            <th className="px-6 py-4">Prob (%)</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-800/50">
@@ -418,23 +434,35 @@ const AdminDashboard = () => {
                                                         onChange={(e) => handleUpdateSpinPrize(idx, 'type', e.target.value)}
                                                     >
                                                         <option value="balance">Balance</option>
-                                                        <option value="bonus">Bonus</option>
                                                         <option value="spins">Spins</option>
-                                                        <option value="badluck">Badluck</option>
+                                                        <option value="weapon">Weapon</option>
+                                                        <option value="item">Item/Ammo</option>
+                                                        <option value="crash">Crash</option>
+                                                        <option value="jackpot">Jackpot</option>
                                                     </select>
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <input 
                                                         type="number" 
-                                                        className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-24"
+                                                        className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-20"
                                                         value={prize.value}
                                                         onChange={(e) => handleUpdateSpinPrize(idx, 'value', e.target.value)}
                                                     />
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <input 
+                                                        type="text" 
+                                                        className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-[10px] font-bold w-24"
+                                                        value={prize.itemKey || ''}
+                                                        placeholder="airgun"
+                                                        disabled={prize.type !== 'weapon' && prize.type !== 'item'}
+                                                        onChange={(e) => handleUpdateSpinPrize(idx, 'itemKey', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <input 
                                                         type="number" 
-                                                        className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-24"
+                                                        className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-16"
                                                         value={prize.probability}
                                                         onChange={(e) => handleUpdateSpinPrize(idx, 'probability', e.target.value)}
                                                     />
@@ -444,9 +472,70 @@ const AdminDashboard = () => {
                                     </tbody>
                                 </table>
                             </div>
-                            <p className="mt-6 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">
-                                Total Probability: {spinConfig.prizes.reduce((acc, p) => acc + (parseFloat(p.probability) || 0), 0).toFixed(2)}%
-                            </p>
+                            
+                            <div className="mt-8 p-4 rounded-2xl bg-black/40 border border-gray-800 flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className={`px-4 py-2 rounded-xl text-xs font-black ${Math.abs(spinConfig.prizes.reduce((acc, p) => acc + (parseFloat(p.probability) || 0), 0) - 100) < 0.01 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                        TOTAL: {spinConfig.prizes.reduce((acc, p) => acc + (parseFloat(p.probability) || 0), 0).toFixed(2)}%
+                                    </div>
+                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Must equal exactly 100% for deployment</p>
+                                </div>
+                                
+                                <div className="flex items-center gap-3">
+                                    <label className="text-[10px] font-black text-gray-500 uppercase">Jackpot Start:</label>
+                                    <input 
+                                        type="number" 
+                                        className="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-24"
+                                        value={spinConfig.progressiveJackpot}
+                                        onChange={(e) => setSpinConfig({ ...spinConfig, progressiveJackpot: parseFloat(e.target.value) })}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {activeTab === 'bird' && birdConfig && (
+                    <div className="max-w-2xl mx-auto space-y-8">
+                        <div className="bg-[#1a2c38] border border-gray-800 rounded-[2.5rem] p-8">
+                            <h2 className="text-xl font-black uppercase tracking-tighter mb-8">Bird Shooting Global Parameters</h2>
+                            
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Base Entry Fee (TRX)</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
+                                            value={birdConfig.entryFee}
+                                            onChange={(e) => setBirdConfig({ ...birdConfig, entryFee: parseFloat(e.target.value) })}
+                                        />
+                                        <p className="mt-2 text-[8px] text-gray-500 font-bold uppercase tracking-widest">Fee will be multiplied by Stage Level (1, 2, 3)</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Game Status</label>
+                                        <select 
+                                            className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
+                                            value={birdConfig.active ? 'true' : 'false'}
+                                            onChange={(e) => setBirdConfig({ ...birdConfig, active: e.target.value === 'true' })}
+                                        >
+                                            <option value="true">Active/Online</option>
+                                            <option value="false">Maintenance</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <button 
+                                    onClick={handleSaveBirdConfig}
+                                    disabled={formLoading}
+                                    className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl uppercase tracking-widest transition-all"
+                                >
+                                    {formLoading ? <Loader2 className="animate-spin mx-auto w-5 h-5" /> : 'Save Parameters'}
+                                </button>
+
+                                {formStatus.message && (
+                                    <p className={`text-[10px] font-black uppercase text-center ${formStatus.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>{formStatus.message}</p>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}

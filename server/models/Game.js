@@ -8,17 +8,19 @@ const gameSchema = new mongoose.Schema({
       name: String,
       type: { 
         type: String, 
-        enum: ['balance', 'bonus', 'spin', 'cash', 'asset', 'none', 'spins', 'crypto', 'badluck', 'jackpot'] 
+        enum: ['balance', 'bonus', 'spins', 'weapon', 'item', 'crash', 'jackpot'] 
       },
       value: Number,
       probability: Number, // 0-100
-      tier: { type: String, enum: ['common', 'rare', 'legendary'] },
+      itemKey: String, // For weapons/items
+      tier: { type: String, enum: ['common', 'rare', 'epic', 'legendary', 'badluck'] },
       color: String,
       icon: String
     }],
     minBet: { type: Number, default: 1 },
     maxBet: { type: Number, default: 100 },
-    active: { type: Boolean, default: true }
+    active: { type: Boolean, default: true },
+    progressiveJackpot: { type: Number, default: 1000 }
   },
   
   // Bird Shooting Configuration

@@ -51,7 +51,7 @@ router.post('/', auth, async (req, res) => {
     let rewardDescription = '';
     if (redeemCode.rewardType === 'BALANCE') {
         user.wallet.bonusBalance += redeemCode.rewardValue;
-        rewardDescription = `$${redeemCode.rewardValue} Bonus Balance`;
+        rewardDescription = `${redeemCode.rewardValue} TRX Bonus Balance`;
     } else if (redeemCode.rewardType === 'SPIN_CREDIT') {
         user.wallet.spinCredits += redeemCode.rewardValue;
         rewardDescription = `${redeemCode.rewardValue} Spin Credits`;

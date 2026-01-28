@@ -1,51 +1,25 @@
 const express = require('express');
 const router = express.Router();
-const crypto = require('crypto');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Game = require('../models/Game');
+const spinEngine = require('../services/SpinEngine');
 
-// Helper: Generate random seed
-const generateSeed = (length = 64) => {
-    return crypto.randomBytes(length / 2).toString('hex');
-};
-
-// Helper: Generate SHA256 hash
-const sha256 = (data) => {
-    return crypto.createHash('sha256').update(data).digest('hex');
-};
-
-// Helper: HMAC-SHA256
-const hmacSha256 = (key, data) => {
-    return crypto.createHmac('sha256', key).update(data).digest('hex');
-};
-
-// Helper: Calculate winning prize based on hash
-const calculateWinningPrize = (prizes, hash) => {
-    // Use first 8 chars (32 bits) of hash for precision
-    const decimal = parseInt(hash.substring(0, 8), 16) / 0xffffffff;
-    
-    let cumulative = 0;
-    for (const prize of prizes) {
-        cumulative += prize.probability; // probability is 0-100
-        if (decimal * 100 <= cumulative) {
-            return prize;
-        }
-    }
-    return prizes[0]; // Fallback
-};
-
-// Blueprint Prize Structure (8 distinct segments)
+// Blueprint Prize Structure (12 distinct segments)
 const DEFAULT_PRIZES = [
-  { id: '1', name: "2 Balance", value: 2, type: "balance", probability: 25, color: "#1a2c38", tier: "common" },
-  { id: '2', name: "5 Balance", value: 5, type: "balance", probability: 15, color: "#3bc117", tier: "common" },
-  { id: '3', name: "Crash", value: 0, type: "badluck", probability: 30, color: "#ff4d4d", tier: "common" },
-  { id: '4', name: "7 Balance", value: 7, type: "balance", probability: 10, color: "#1a2c38", tier: "common" },
-  { id: '5', name: "10 Balance", value: 10, type: "balance", probability: 8, color: "#3bc117", tier: "rare" },
-  { id: '6', name: "Free Spin", value: 1, type: "spins", probability: 7, color: "#FFD166", tier: "rare" },
-  { id: '7', name: "100 Balance", value: 100, type: "balance", probability: 4, color: "#118AB2", tier: "rare" },
-  { id: '8', name: "500 Balance", value: 500, type: "balance", probability: 1, color: "#FFD700", tier: "legendary" },
+  { id: '1', name: "0.1 TRX", value: 0.1, type: "balance", probability: 25, color: "#2d3436", tier: "common" },
+  { id: '2', name: "10 Arrows", value: 10, type: "item", itemKey: "arrow", probability: 15, color: "#00b894", tier: "common" },
+  { id: '3', name: "CRASH", value: 0, type: "crash", probability: 10, color: "#d63031", tier: "badluck" },
+  { id: '4', name: "1 TRX", value: 1, type: "balance", probability: 10, color: "#0984e3", tier: "common" },
+  { id: '5', name: "10 Pellets", value: 10, type: "item", itemKey: "pellet", probability: 10, color: "#6c5ce7", tier: "common" },
+  { id: '6', name: "Free Spin", value: 1, type: "spins", probability: 8, color: "#fdcb6e", tier: "rare" },
+  { id: '7', name: "CRASH", value: 0, type: "crash", probability: 7, color: "#d63031", tier: "badluck" },
+  { id: '8', name: "10 TRX", value: 10, type: "balance", probability: 5, color: "#e84393", tier: "rare" },
+  { id: '9', name: "Wooden Bow", value: 1, type: "weapon", itemKey: "wooden_bow", probability: 4, color: "#f1c40f", tier: "epic" },
+  { id: '10', name: "100 TRX", value: 100, type: "balance", probability: 3, color: "#ff9f43", tier: "epic" },
+  { id: '11', name: "Airgun", value: 1, type: "weapon", itemKey: "airgun", probability: 2, color: "#54a0ff", tier: "legendary" },
+  { id: '12', name: "JACKPOT", value: 0, type: "jackpot", probability: 1, color: "#fffa65", tier: "legendary" },
 ];
 
 // Initialize spin
@@ -59,49 +33,40 @@ router.post('/initialize', auth, async (req, res) => {
     if (!user.provablyFair) user.provablyFair = {};
     
     if (!user.provablyFair.serverSeed) {
-        user.provablyFair.serverSeed = generateSeed(64);
+        user.provablyFair.serverSeed = spinEngine.generateSeed(64);
         user.provablyFair.nonce = 0;
         needsSave = true;
     }
     if (!user.provablyFair.clientSeed) {
-        user.provablyFair.clientSeed = generateSeed(10);
+        user.provablyFair.clientSeed = spinEngine.generateSeed(10);
         needsSave = true;
     }
     
     if (needsSave) await user.save();
 
-    try {
-        if (!gameConfig) {
-            gameConfig = await Game.create({
-                spinGame: {
-                    prizes: DEFAULT_PRIZES,
-                    minBet: 1,
-                    maxBet: 100
-                }
-            });
-        } else if (!gameConfig.spinGame || gameConfig.spinGame.prizes.length < 8) {
-            // Update if existing config is outdated
-            gameConfig.spinGame = { ...gameConfig.spinGame, prizes: DEFAULT_PRIZES };
-            await gameConfig.save();
-        }
-    } catch (validationError) {
-        console.warn('Invalid game config found, resetting...', validationError.message);
-        await Game.deleteMany({});
-        gameConfig = await Game.create({
-            spinGame: {
-                prizes: DEFAULT_PRIZES,
-                minBet: 1,
-                maxBet: 100
-            }
-        });
+    let gameConfig = await Game.findOne();
+    if (!gameConfig || !gameConfig.spinGame || !gameConfig.spinGame.prizes || gameConfig.spinGame.prizes.length === 0) {
+        gameConfig = await Game.findOneAndUpdate(
+            {}, 
+            { 
+                $set: { 
+                    "spinGame.prizes": DEFAULT_PRIZES,
+                    "spinGame.minBet": 1,
+                    "spinGame.maxBet": 100,
+                    "spinGame.progressiveJackpot": gameConfig?.spinGame?.progressiveJackpot || 1000
+                } 
+            }, 
+            { upsert: true, new: true }
+        );
     }
 
     res.json({
       success: true,
       clientSeed: user.provablyFair.clientSeed,
       nonce: user.provablyFair.nonce,
-      serverSeedHash: sha256(user.provablyFair.serverSeed),
-      prizes: gameConfig.spinGame.prizes
+      serverSeedHash: spinEngine.sha256(user.provablyFair.serverSeed),
+      prizes: gameConfig.spinGame.prizes,
+      progressiveJackpot: gameConfig.spinGame.progressiveJackpot
     });
 
   } catch (error) {
@@ -128,62 +93,63 @@ router.post('/play', auth, async (req, res) => {
         user.provablyFair.nonce = 0; // Reset nonce on seed change
     }
 
-    // Ensure Server Seed Exists
-    if (!user.provablyFair || !user.provablyFair.serverSeed) {
-        user.provablyFair = {
-            serverSeed: generateSeed(64),
-            clientSeed: clientSeed || generateSeed(10),
-            nonce: 0
-        };
-    }
-
     // Get Game Config
-    const gameConfig = await Game.findOne();
-    const prizes = gameConfig ? gameConfig.spinGame.prizes : DEFAULT_PRIZES;
+    let gameConfig = await Game.findOne();
+    if (!gameConfig) {
+        gameConfig = await Game.create({
+            spinGame: {
+                prizes: DEFAULT_PRIZES,
+                minBet: 1,
+                maxBet: 100,
+                progressiveJackpot: 1000
+            }
+        });
+    }
+    const prizes = gameConfig.spinGame.prizes;
 
-    // Calculate Result (Provably Fair)
+    // Calculate Result (Provably Fair via SpinEngine)
     const serverSeed = user.provablyFair.serverSeed;
     const currentClientSeed = user.provablyFair.clientSeed;
     const nonce = user.provablyFair.nonce;
     
-    // HMAC-SHA256(serverSeed, clientSeed:nonce)
-    const rawHash = hmacSha256(serverSeed, `${currentClientSeed}:${nonce}`);
-    const winningPrize = calculateWinningPrize(prizes, rawHash);
+    const rawHash = spinEngine.generateHash(serverSeed, currentClientSeed, nonce);
+    let winningPrize = spinEngine.calculateWinningPrize(prizes, rawHash);
+
+    // Progressive Jackpot Increment (0.1 TRX per spin)
+    gameConfig.spinGame.progressiveJackpot += 0.1;
+
+    // Handle Jackpot Win
+    if (winningPrize.type === 'jackpot') {
+        winningPrize.value = gameConfig.spinGame.progressiveJackpot;
+        winningPrize.name = `JACKPOT ${winningPrize.value.toFixed(2)} TRX`;
+        gameConfig.spinGame.progressiveJackpot = 1000; // Reset
+    }
+    await gameConfig.save();
 
     // Update User State
     user.wallet.spinCredits -= bet;
-    user.stats.totalSpins += 1;
-    user.provablyFair.nonce += 1; // Increment nonce for next game
+    user.provablyFair.nonce += 1;
 
-    // Award Prize
-    if (winningPrize.value > 0) {
-      switch(winningPrize.type) {
-        case 'balance':
-        case 'jackpot':
-          user.wallet.mainBalance += winningPrize.value;
-          break;
-        case 'bonus':
-          user.wallet.bonusBalance += winningPrize.value;
-          break;
-        case 'spins':
-          user.wallet.spinCredits += winningPrize.value;
-          break;
-        case 'crypto':
-           // Assuming we might have a crypto wallet field later, for now add to main or track separately
-           // For prototype, adding to mainBalance * exchange rate? Or just logging.
-           // Blueprint says "Wallets: bdt, usd, trx..." - schema has "wallets" object but simple version has "mainBalance".
-           // Let's add to mainBalance for now to avoid crashes, assuming 1 Crypto unit = 100 Main Balance units for simplicity or just add as is?
-           // "10 Crypto" -> let's assume it adds to a distinct balance if available, else ignored or added to main.
-           // Schema has `wallet` with `mainBalance`.
-           // Let's just treat it as mainBalance for this iteration or add to `totalWon`.
-           user.wallet.mainBalance += winningPrize.value * 10; // Dummy conversion
-           break;
-      }
-      user.wallet.totalWon += winningPrize.value;
-      user.stats.totalWins += 1;
-      if (winningPrize.value > user.stats.biggestWin) {
-        user.stats.biggestWin = winningPrize.value;
-      }
+    // Award Prize logic
+    if (winningPrize.value > 0 || winningPrize.type === 'weapon' || winningPrize.type === 'item') {
+        switch(winningPrize.type) {
+            case 'jackpot':
+            case 'balance':
+                user.wallet.mainBalance += winningPrize.value;
+                break;
+            case 'spins':
+                user.wallet.spinCredits += winningPrize.value;
+                break;
+            case 'weapon':
+                if (!user.inventory.items.includes(winningPrize.itemKey)) {
+                    user.inventory.items.push(winningPrize.itemKey);
+                }
+                break;
+            case 'item':
+                user.inventory.items.push(`${winningPrize.value}x_${winningPrize.itemKey}`);
+                break;
+        }
+        user.wallet.totalWon += (winningPrize.type === 'balance' || winningPrize.type === 'jackpot') ? winningPrize.value : 0;
     }
 
     await user.save();
@@ -191,32 +157,21 @@ router.post('/play', auth, async (req, res) => {
     // Record Transaction
     await Transaction.create({
       userId: user._id,
-      type: winningPrize.value > 0 ? 'spin_win' : 'spin_bet',
-      amount: winningPrize.value > 0 ? winningPrize.value : -bet,
-      description: `Spin game: ${winningPrize.name}`,
-      metadata: {
-        game: 'spin',
-        prize: winningPrize.name,
-        tier: winningPrize.tier,
-        clientSeed: currentClientSeed,
-        nonce: nonce, // The nonce used for THIS game
-        hash: rawHash
-      }
+      type: 'spin_game',
+      amount: (winningPrize.type === 'balance' || winningPrize.type === 'jackpot') ? winningPrize.value : 0,
+      description: `Spin Result: ${winningPrize.name}`,
+      metadata: { prizeId: winningPrize.id, nonce, hash: rawHash }
     });
 
     res.json({
       success: true,
       prize: winningPrize,
-      result: {
-          hash: rawHash,
-          nonce: nonce,
-          clientSeed: currentClientSeed
-      },
+      result: { hash: rawHash, nonce, clientSeed: currentClientSeed },
       wallet: {
         balance: user.wallet.mainBalance,
-        bonus: user.wallet.bonusBalance,
         spins: user.wallet.spinCredits
-      }
+      },
+      progressiveJackpot: gameConfig.spinGame.progressiveJackpot
     });
 
   } catch (error) {
@@ -232,7 +187,7 @@ router.post('/rotate-seed', auth, async (req, res) => {
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         const oldServerSeed = user.provablyFair.serverSeed;
-        const newServerSeed = generateSeed(64);
+        const newServerSeed = spinEngine.generateSeed(64);
         
         user.provablyFair.serverSeed = newServerSeed;
         user.provablyFair.nonce = 0;
@@ -241,12 +196,55 @@ router.post('/rotate-seed', auth, async (req, res) => {
         res.json({
             success: true,
             previousServerSeed: oldServerSeed,
-            newServerSeedHash: sha256(newServerSeed)
+            newServerSeedHash: spinEngine.sha256(newServerSeed)
         });
 
     } catch (error) {
         console.error('Rotate seed error:', error);
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Update Client Seed
+router.post('/update-client-seed', auth, async (req, res) => {
+    const { clientSeed } = req.body;
+    if (!clientSeed || clientSeed.length < 1) return res.status(400).json({ error: 'Invalid client seed' });
+
+    try {
+        const user = await User.findById(req.user.id);
+        user.provablyFair.clientSeed = clientSeed;
+        user.provablyFair.nonce = 0; // Reset nonce on seed change
+        await user.save();
+
+        res.json({ success: true, message: 'Client seed updated and nonce reset.', clientSeed: user.provablyFair.clientSeed });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Verify a result
+router.post('/verify', async (req, res) => {
+    const { serverSeed, clientSeed, nonce } = req.body;
+    
+    if (!serverSeed || !clientSeed || nonce === undefined) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    try {
+        const gameConfig = await Game.findOne();
+        const prizes = gameConfig ? gameConfig.spinGame.prizes : DEFAULT_PRIZES;
+
+        // Re-calculate HMAC-SHA256
+        const hash = spinEngine.generateHash(serverSeed, clientSeed, nonce);
+        const prize = spinEngine.calculateWinningPrize(prizes, hash);
+
+        res.json({
+            hash,
+            prize,
+            decimal: parseInt(hash.substring(0, 8), 16) / 0xffffffff
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Verification failed' });
     }
 });
 

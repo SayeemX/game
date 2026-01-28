@@ -44,21 +44,30 @@ router.get('/users', auth, admin, async (req, res) => {
 router.post('/users/update-balance', auth, admin, async (req, res) => {
     const { userId, amount, type, description } = req.body;
     try {
+        const updateAmount = parseFloat(amount);
+        if (isNaN(updateAmount)) return res.status(400).json({ message: 'Invalid amount' });
+
         const user = await User.findById(userId);
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         if (type === 'main') {
-            user.wallet.mainBalance += parseFloat(amount);
+            if (user.wallet.mainBalance + updateAmount < 0) {
+                return res.status(400).json({ message: 'Resulting main balance cannot be negative' });
+            }
+            user.wallet.mainBalance += updateAmount;
         } else {
-            user.wallet.bonusBalance += parseFloat(amount);
+            if (user.wallet.bonusBalance + updateAmount < 0) {
+                return res.status(400).json({ message: 'Resulting bonus balance cannot be negative' });
+            }
+            user.wallet.bonusBalance += updateAmount;
         }
 
         const transaction = new Transaction({
             userId,
-            type: amount >= 0 ? 'admin_add' : 'admin_deduct',
-            amount: Math.abs(amount),
+            type: updateAmount >= 0 ? 'admin_add' : 'admin_deduct',
+            amount: Math.abs(updateAmount),
             status: 'completed',
-            description: description || `Admin balance update: ${amount}`,
+            description: description || `Admin balance update: ${updateAmount}`,
             completedAt: new Date()
         });
 
@@ -122,14 +131,69 @@ router.get('/spin-config', auth, admin, async (req, res) => {
 // @desc    Update spin game config
 router.post('/spin-config', auth, admin, async (req, res) => {
     try {
+        const { prizes, minBet, maxBet, progressiveJackpot } = req.body;
+        
+        if (!prizes || !Array.isArray(prizes)) {
+            return res.status(400).json({ error: 'Prizes must be an array' });
+        }
+
+        // Validate Total Probability
+        const totalProb = prizes.reduce((acc, p) => acc + (parseFloat(p.probability) || 0), 0);
+        if (Math.abs(totalProb - 100) > 0.01) {
+            return res.status(400).json({ error: `Total probability must be 100%. Current: ${totalProb}%` });
+        }
+
         let config = await Game.findOne();
         if (!config) {
-            config = new Game({ spinGame: req.body });
+            config = new Game({ 
+                spinGame: { prizes, minBet, maxBet, progressiveJackpot } 
+            });
         } else {
-            config.spinGame = req.body;
+            config.spinGame = { 
+                ...config.spinGame, 
+                prizes, 
+                minBet: minBet || config.spinGame.minBet, 
+                maxBet: maxBet || config.spinGame.maxBet,
+                progressiveJackpot: progressiveJackpot !== undefined ? progressiveJackpot : config.spinGame.progressiveJackpot
+            };
         }
+        
         await config.save();
         res.json(config.spinGame);
+    } catch (err) {
+        console.error('Update spin config error:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// @route   GET api/admin/bird-config
+// @desc    Get bird shooting game config
+router.get('/bird-config', auth, admin, async (req, res) => {
+    try {
+        let config = await Game.findOne();
+        res.json(config ? config.birdShooting : { entryFee: 10 });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// @route   POST api/admin/bird-config
+// @desc    Update bird shooting game config
+router.post('/bird-config', auth, admin, async (req, res) => {
+    try {
+        const { entryFee, active } = req.body;
+        let config = await Game.findOne();
+        if (!config) {
+            config = new Game({ birdShooting: { entryFee, active } });
+        } else {
+            config.birdShooting = { 
+                ...config.birdShooting, 
+                entryFee: entryFee !== undefined ? entryFee : config.birdShooting.entryFee,
+                active: active !== undefined ? active : config.birdShooting.active
+            };
+        }
+        await config.save();
+        res.json(config.birdShooting);
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }

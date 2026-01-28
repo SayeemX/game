@@ -3,120 +3,135 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const BirdShootingEngine = require('../services/BirdShootingEngine');
 const User = require('../models/User');
+const BirdWeapon = require('../models/BirdWeapon');
 const Transaction = require('../models/Transaction');
+const BirdMatch = require('../models/BirdMatch');
 
-// Start bird shooting game
+// Start Game
 router.post('/bird/start', auth, async (req, res) => {
   try {
     const { level = 1 } = req.body;
     const user = await User.findById(req.user.id);
 
-    // Check balance for entry fee
-    const entryFee = 10; // $10 entry fee
+    // Fetch Entry Fee from Admin Config
+    const gameConfig = await Game.findOne();
+    const baseFee = gameConfig?.birdShooting?.entryFee || 10;
+    const entryFee = baseFee * level;
+
     if (user.wallet.mainBalance < entryFee) {
-      return res.status(400).json({ error: 'Insufficient balance' });
+      return res.status(400).json({ error: 'Insufficient TRX balance' });
     }
 
-    // Deduct entry fee
+    // Atomic Transaction: Entry Fee
     user.wallet.mainBalance -= entryFee;
     user.wallet.totalSpent += entryFee;
     await user.save();
 
-    // Record transaction
     await Transaction.create({
       userId: user._id,
       type: 'game_bet',
       amount: -entryFee,
-      description: `Bird shooting game entry - Level ${level}`
+      currency: 'TRX',
+      description: `GameX Sniper Entry - Level ${level}`,
+      status: 'completed'
     });
 
-    // Create game
-    const game = BirdShootingEngine.createGame(user._id, level);
+    const weaponKey = user.inventory.equippedWeapon || 'basic_bow';
+    const weapon = await BirdWeapon.findOne({ key: weaponKey });
+    
+    // Fallback to basic stats if weapon not found (shouldn't happen if seeded correctly)
+    const weaponStats = weapon ? weapon.toObject() : { 
+        key: 'basic_bow', 
+        damage: 1, 
+        accuracy: 0.8, 
+        perks: { windResistance: 0.1 } 
+    };
+
+    const game = BirdShootingEngine.createGame(user._id, level, weaponStats);
+
+    // Create Match Record
+    await BirdMatch.create({
+      userId: user._id,
+      matchId: game.id,
+      level,
+      entryFee,
+      seed: game.seed,
+      status: 'active'
+    });
 
     res.json({
       success: true,
       gameId: game.id,
-      level: game.level,
-      birdsTotal: game.birdsTotal,
-      timeLimit: game.timeRemaining
+      wind: game.wind,
+      birds: game.birds,
+      weapon: weaponStats,
+      ammo: 20
     });
 
   } catch (error) {
-    console.error('Game start error:', error);
-    res.status(500).json({ error: 'Failed to start game' });
+    console.error(error);
+    res.status(500).json({ error: 'Failed to start hunting session' });
   }
 });
 
-// Process shot
+// Process Shot
 router.post('/bird/shoot', auth, async (req, res) => {
   try {
-    const { gameId, x, y } = req.body;
-    
-    const result = BirdShootingEngine.processShot(gameId, { x, y, timestamp: Date.now() });
-    
-    if (!result) {
-      return res.status(400).json({ error: 'Invalid game or shot' });
-    }
-
-    res.json({
-      success: true,
-      hit: result.hit,
-      points: result.points,
-      totalScore: result.totalScore,
-      birdsRemaining: result.birdsRemaining,
-      gameComplete: result.gameComplete
-    });
-
+    const { gameId, x, y, angle, power } = req.body;
+    const result = BirdShootingEngine.validateShot(gameId, { x, y, angle, power });
+    res.json(result);
   } catch (error) {
-    console.error('Shot error:', error);
-    res.status(500).json({ error: 'Shot failed' });
+    res.status(500).json({ error: 'Shot processing failed' });
   }
 });
 
-// End game
+// End Game & Reward
 router.post('/bird/end', auth, async (req, res) => {
   try {
     const { gameId } = req.body;
+    const game = BirdShootingEngine.endGame(gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+
     const user = await User.findById(req.user.id);
     
-    const game = BirdShootingEngine.endGame(gameId);
-    
-    if (!game) {
-      return res.status(400).json({ error: 'Game not found' });
-    }
+    // Reward Logic: 2 TRX per 10 points
+    const reward = Math.floor(game.score / 5); 
 
-    // Calculate reward
-    const baseReward = Math.floor(game.finalScore / 10);
-    const multiplier = game.level;
-    const totalReward = baseReward * multiplier;
-
-    // Award winnings
-    if (totalReward > 0) {
-      user.wallet.mainBalance += totalReward;
-      user.wallet.totalWon += totalReward;
+    if (reward > 0) {
+      user.wallet.mainBalance += reward;
+      user.wallet.totalWon += reward;
       await user.save();
 
-      // Record win transaction
       await Transaction.create({
         userId: user._id,
         type: 'game_win',
-        amount: totalReward,
-        description: `Bird shooting win - Level ${game.level}`
+        amount: reward,
+        currency: 'TRX',
+        description: `GameX Sniper Reward - Score: ${game.score}`,
+        status: 'completed'
       });
     }
 
+    await BirdMatch.findOneAndUpdate(
+        { matchId: gameId },
+        { 
+            score: game.score, 
+            reward, 
+            status: 'completed', 
+            endedAt: new Date(),
+            stats: { shots: game.shots, hits: game.hits, accuracy: (game.hits/game.shots)*100 }
+        }
+    );
+
     res.json({
       success: true,
-      finalScore: game.finalScore,
-      birdsHit: game.birdsHit,
-      timeTaken: game.timeTaken,
-      reward: totalReward,
+      score: game.score,
+      reward,
       newBalance: user.wallet.mainBalance
     });
 
   } catch (error) {
-    console.error('Game end error:', error);
-    res.status(500).json({ error: 'Failed to end game' });
+    res.status(500).json({ error: 'Failed to finalize game' });
   }
 });
 

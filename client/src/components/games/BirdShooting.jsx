@@ -1,352 +1,222 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import Phaser from 'phaser';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDispatch, useSelector } from 'react-redux';
-import { Target, Timer, Trophy, Zap, Crosshair, AlertCircle } from 'lucide-react';
-import api from '../../services/api';
-import { updateBalance } from '../../redux/slices/userSlice';
+import { Target, Timer, Trophy, Zap, Crosshair, AlertCircle, ShieldCheck, Gamepad2 } from 'lucide-react';
+import { AuthContext } from '../../context/AuthContext';
+import { updateWallet } from '../../redux/slices/userSlice';
+import SniperScene from '../../scenes/SniperScene';
 
 const BirdShooting = () => {
-  const [gameState, setGameState] = useState({
-    status: 'idle', // idle, playing, ended
-    score: 0,
-    birdsHit: 0,
-    birdsTotal: 10,
-    timeLeft: 60,
-    level: 1,
-    birds: [],
-    shots: [],
-    gameId: null
-  });
+  const { socket } = useContext(AuthContext);
+  const [gameState, setGameState] = useState('lobby'); // lobby, playing, ended
+  const [matchData, setMatchData] = useState(null);
+  const [finalResult, setFinalResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [currentScore, setCurrentScore] = useState(0);
+  const [currentCombo, setCurrentCombo] = useState(0);
 
-  const [crosshair, setCrosshair] = useState({ x: 50, y: 50 });
   const gameContainerRef = useRef(null);
-  const timerRef = useRef(null);
-  const moveRef = useRef(null);
   const dispatch = useDispatch();
   const { wallet } = useSelector(state => state.user);
-  const balance = wallet?.mainBalance || 0;
 
-  // Cleanup on unmount
+  // Socket Listeners
   useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (moveRef.current) clearInterval(moveRef.current);
+    if (!socket) return;
+
+    const handleSession = (data) => {
+        setMatchData(data);
+        setGameState('playing');
+        setLoading(false);
     };
-  }, []);
 
-  const generateBirds = (count, level) => {
-    const birds = [];
-    for (let i = 0; i < count; i++) {
-      birds.push({
-        id: i,
-        x: Math.random() * 80 + 10,
-        y: Math.random() * 60 + 20,
-        size: 40 + Math.random() * 20,
-        speed: 0.2 + (level * 0.1) + Math.random() * 0.3,
-        direction: Math.random() * 360,
-        points: 10 + Math.floor(Math.random() * level * 5),
-        isHit: false
-      });
-    }
-    return birds;
-  };
+    const handleShotResult = (res) => {
+        if (res.valid) {
+            setCurrentScore(res.score);
+            setCurrentCombo(res.combo);
+        }
+    };
 
-  const startGame = async (level = 1) => {
-    try {
-      const response = await api.post('/games/bird/start', { level });
-      const { gameId, birdsTotal, timeLimit } = response.data;
+    const handleGameOver = (data) => {
+        setFinalResult(data);
+        setGameState('ended');
+        dispatch(updateWallet({ mainBalance: data.newBalance }));
+    };
 
-      // Update local wallet balance immediately
-      dispatch(updateBalance({ amount: -10 }));
+    const handleBalanceUpdate = (data) => {
+        dispatch(updateWallet({ mainBalance: data.mainBalance }));
+    };
 
-      setGameState({
-        status: 'playing',
-        score: 0,
-        birdsHit: 0,
-        birdsTotal: birdsTotal,
-        timeLeft: timeLimit / 1000,
-        level,
-        birds: generateBirds(birdsTotal, level),
-        shots: [],
-        gameId
-      });
+    socket.on('bird_shoot:session', handleSession);
+    socket.on('bird_shoot:shot_result', handleShotResult);
+    socket.on('bird_shoot:game_over', handleGameOver);
+    socket.on('balance_update', handleBalanceUpdate);
 
-      // Start timer
-      timerRef.current = setInterval(() => {
-        setGameState(prev => {
-          if (prev.timeLeft <= 1) {
-            clearInterval(timerRef.current);
-            clearInterval(moveRef.current);
-            endGame(prev.gameId);
-            return { ...prev, timeLeft: 0 };
-          }
-          return { ...prev, timeLeft: prev.timeLeft - 1 };
-        });
-      }, 1000);
+    return () => {
+      socket.off('bird_shoot:session', handleSession);
+      socket.off('bird_shoot:shot_result', handleShotResult);
+      socket.off('bird_shoot:game_over', handleGameOver);
+      socket.off('balance_update', handleBalanceUpdate);
+    };
+  }, [socket, dispatch]);
 
-      // Start movement
-      moveRef.current = setInterval(() => {
-        setGameState(prev => {
-          if (prev.status !== 'playing') return prev;
-          return {
-            ...prev,
-            birds: prev.birds.map(bird => {
-              if (bird.isHit) return bird;
-              
-              const radian = (bird.direction * Math.PI) / 180;
-              let newX = bird.x + Math.cos(radian) * bird.speed;
-              let newY = bird.y + Math.sin(radian) * bird.speed;
-              
-              let newDirection = bird.direction;
-              if (newX < 5 || newX > 95) newDirection = 180 - newDirection;
-              if (newY < 15 || newY > 85) newDirection = -newDirection;
-              
-              return {
-                ...bird,
-                x: Math.max(5, Math.min(95, newX)),
-                y: Math.max(15, Math.min(85, newY)),
-                direction: newDirection
-              };
-            })
-          };
-        });
-      }, 30);
+  useEffect(() => {
+    if (gameState === 'playing' && matchData && socket) {
+      const config = {
+        type: Phaser.AUTO,
+        parent: gameContainerRef.current,
+        width: 800,
+        height: 600,
+        physics: {
+          default: 'arcade',
+          arcade: { gravity: { y: 0 }, debug: false }
+        },
+        scene: SniperScene,
+        backgroundColor: '#0f212e'
+      };
 
-    } catch (error) {
-      alert(error.response?.data?.error || 'Failed to start game');
-    }
-  };
+      const game = new Phaser.Game(config);
 
-  const handleShot = async (e) => {
-    if (gameState.status !== 'playing') return;
-
-    const rect = gameContainerRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-
-    try {
-      const response = await api.post('/games/bird/shoot', {
-        gameId: gameState.gameId,
-        x,
-        y
+      game.scene.start('SniperScene', {
+        socket, // Pass socket to scene
+        gameId: matchData.id,
+        wind: matchData.wind,
+        birds: matchData.birds,
+        weapon: matchData.weapon
       });
 
-      const { hit, points, totalScore, birdsRemaining, gameComplete } = response.data;
-
-      setGameState(prev => ({
-        ...prev,
-        score: totalScore,
-        birdsHit: prev.birdsTotal - birdsRemaining,
-        birds: prev.birds.map(bird => {
-           // Simple client-side hit detection visual
-           const distance = Math.sqrt(Math.pow(x - bird.x, 2) + Math.pow(y - bird.y, 2));
-           if (distance < bird.size / 5) { // rough match
-             return { ...bird, isHit: true };
-           }
-           return bird;
-        }),
-        shots: [...prev.shots, { x, y, hit }]
-      }));
-
-      if (gameComplete) {
-        clearInterval(timerRef.current);
-        clearInterval(moveRef.current);
-        endGame(gameState.gameId);
-      }
-    } catch (error) {
-      console.error('Shot failed:', error);
+      return () => {
+        game.destroy(true);
+      };
     }
-  };
+  }, [gameState, matchData, socket]);
 
-  const endGame = async (gameId) => {
-    try {
-      const response = await api.post('/games/bird/end', { gameId });
-      const { finalScore, reward, newBalance } = response.data;
-      
-      setGameState(prev => ({
-        ...prev,
-        status: 'ended',
-        score: finalScore
-      }));
-
-      if (reward > 0) {
-          dispatch(updateBalance({ amount: reward }));
-      }
-    } catch (error) {
-      console.error('Failed to end game:', error);
+  const startNewMatch = (level = 1) => {
+    if (!socket) {
+        setError("Connection lost. Please refresh.");
+        return;
     }
-  };
-
-  const handleMouseMove = (e) => {
-    if (!gameContainerRef.current) return;
-    const rect = gameContainerRef.current.getBoundingClientRect();
-    setCrosshair({
-      x: ((e.clientX - rect.left) / rect.width) * 100,
-      y: ((e.clientY - rect.top) / rect.height) * 100
+    setLoading(true);
+    setError(null);
+    setCurrentScore(0);
+    setCurrentCombo(0);
+    
+    socket.emit('bird_shoot:join', { 
+        level, 
+        weapon: { damage: 1, name: 'Elite Bow', type: 'bow' } 
     });
   };
 
   return (
-    <div className="min-h-screen bg-black text-white p-4">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-green-500">Bird Shooting</h1>
-            <p className="text-gray-400 text-sm">Precision is key!</p>
-          </div>
-          <div className="flex gap-4">
-             <div className="bg-gray-900 border border-gray-800 px-4 py-2 rounded-xl text-center">
-                <div className="text-[10px] text-gray-500 uppercase font-bold">Balance</div>
-                <div className="text-xl font-bold text-green-500">${balance}</div>
-             </div>
-             <div className="bg-gray-900 border border-gray-800 px-4 py-2 rounded-xl text-center">
-                <div className="text-[10px] text-gray-500 uppercase font-bold">Time Left</div>
-                <div className={`text-xl font-bold ${gameState.timeLeft < 10 ? 'text-red-500' : 'text-yellow-500'}`}>
-                    {gameState.timeLeft}s
-                </div>
-             </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Game Canvas */}
-          <div className="lg:col-span-3">
-            <div 
-              ref={gameContainerRef}
-              className="relative bg-gray-900 rounded-3xl border-4 border-gray-800 h-[500px] overflow-hidden cursor-none shadow-2xl"
-              onMouseMove={handleMouseMove}
-              onClick={handleShot}
-            >
-              {/* Background Elements */}
-              <div className="absolute inset-0 opacity-10 pointer-events-none">
-                 <div className="absolute top-20 left-40 w-40 h-40 bg-green-500 rounded-full blur-[100px]"></div>
-                 <div className="absolute bottom-20 right-40 w-40 h-40 bg-blue-500 rounded-full blur-[100px]"></div>
-              </div>
-
-              {/* Crosshair */}
-              {gameState.status === 'playing' && (
-                <div 
-                  className="absolute w-12 h-12 pointer-events-none z-50 transition-transform duration-75"
-                  style={{
-                    left: `${crosshair.x}%`,
-                    top: `${crosshair.y}%`,
-                    transform: 'translate(-50%, -50%)'
-                  }}
-                >
-                  <Crosshair className="w-full h-full text-red-500 drop-shadow-[0_0_5px_rgba(239,68,68,0.5)]" />
-                </div>
-              )}
-
-              {/* Birds */}
-              {gameState.birds.map(bird => (
-                <motion.div
-                  key={bird.id}
-                  className={`absolute rounded-full flex items-center justify-center transition-opacity duration-300 ${bird.isHit ? 'opacity-0' : 'opacity-100'}`}
-                  style={{
-                    left: `${bird.x}%`,
-                    top: `${bird.y}%`,
-                    width: `${bird.size}px`,
-                    height: `${bird.size}px`,
-                    transform: 'translate(-50%, -50%)',
-                    background: `radial-gradient(circle, #facc15 0%, #ca8a04 100%)`,
-                    boxShadow: '0 0 15px rgba(250,204,21,0.3)'
-                  }}
-                >
-                   <Target className="w-1/2 h-1/2 text-white/50" />
-                </motion.div>
-              ))}
-
-              {/* Overlays */}
-              {gameState.status === 'idle' && (
-                <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40">
-                  <div className="text-center p-8 max-w-md">
-                    <div className="w-24 h-24 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <Target className="w-12 h-12 text-green-500" />
+    <div className="min-h-screen bg-[#0d1117] text-white p-4 font-sans">
+      <div className="max-w-6xl mx-auto pt-12">
+        
+        {/* Lobby State */}
+        {gameState === 'lobby' && (
+          <div className="flex flex-col items-center justify-center py-12">
+            <motion.div initial={{opacity:0, scale:0.9}} animate={{opacity:1, scale:1}} className="text-center space-y-10">
+                <div className="relative inline-block">
+                    <div className="w-24 h-24 bg-[#3bc117]/10 rounded-3xl flex items-center justify-center mx-auto border border-[#3bc117]/20 shadow-[0_0_50px_rgba(59,193,23,0.1)]">
+                        <Target className="w-12 h-12 text-[#3bc117]" />
                     </div>
-                    <h2 className="text-3xl font-black mb-2">READY TO SHOOT?</h2>
-                    <p className="text-gray-400 mb-8">Entry fee: <span className="text-white font-bold">$10</span>. Earn points for every bird hit!</p>
-                    <button
-                      onClick={() => startGame(1)}
-                      className="w-full py-4 bg-green-600 hover:bg-green-500 text-white font-black text-xl rounded-2xl transition-all shadow-lg shadow-green-900/40"
-                    >
-                      START GAME
-                    </button>
-                  </div>
+                    <Zap className="w-6 h-6 text-yellow-500 absolute -top-2 -right-2 animate-pulse" />
                 </div>
-              )}
 
-              {gameState.status === 'ended' && (
-                <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-40">
-                  <div className="text-center p-8 bg-gray-900 border border-gray-800 rounded-3xl shadow-2xl">
-                    <Trophy className="w-20 h-20 text-yellow-500 mx-auto mb-4" />
-                    <h2 className="text-3xl font-bold mb-1">MISSION COMPLETE</h2>
-                    <div className="text-5xl font-black text-green-500 mb-4">${gameState.score}</div>
-                    <div className="flex justify-center gap-8 mb-8 text-gray-400 text-sm">
-                        <div>
-                            <div className="font-bold text-white text-lg">{gameState.birdsHit}</div>
-                            BIRDS HIT
-                        </div>
-                        <div>
-                            <div className="font-bold text-white text-lg">
-                                {gameState.shots.length > 0 ? Math.round((gameState.birdsHit / gameState.shots.length) * 100) : 0}%
+                <div>
+                    <h1 className="text-6xl font-black uppercase tracking-tighter italic">Game<span className="text-[#3bc117]">X</span> Sniper</h1>
+                    <p className="text-gray-500 font-bold uppercase tracking-[0.3em] text-xs mt-2">Elite Precision Hunting Simulation</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+                    {[1, 2, 3].map(level => (
+                        <button 
+                            key={level}
+                            onClick={() => startNewMatch(level)}
+                            disabled={loading}
+                            className="bg-[#1a2c38] border-2 border-gray-800 hover:border-[#3bc117] p-8 rounded-[2.5rem] transition-all group relative overflow-hidden"
+                        >
+                            <div className="absolute inset-0 bg-[#3bc117]/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <span className="text-[10px] font-black text-gray-500 block mb-2 uppercase tracking-widest relative z-10">Stage 0{level}</span>
+                            <span className="text-2xl font-black block mb-6 relative z-10">{level === 1 ? 'WOODS' : level === 2 ? 'MOUNTAINS' : 'LEGENDARY'}</span>
+                            <div className="py-3 px-6 bg-[#3bc117] text-black rounded-2xl font-black text-sm uppercase relative z-10 shadow-lg shadow-[#3bc117]/20 group-hover:scale-105 transition-transform">
+                                Entry {level * 10} TRX
                             </div>
-                            ACCURACY
+                        </button>
+                    ))}
+                </div>
+                {error && (
+                    <div className="flex items-center justify-center gap-2 text-red-500 font-black uppercase text-[10px] tracking-widest bg-red-500/10 p-4 rounded-2xl border border-red-500/20">
+                        <AlertCircle className="w-4 h-4" /> {error}
+                    </div>
+                )}
+            </motion.div>
+          </div>
+        )}
+
+        {/* Playing State */}
+        {gameState === 'playing' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-[#1a2c38] p-6 rounded-[2rem] border border-gray-800 flex items-center justify-between">
+                    <div>
+                        <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">TRX Balance</p>
+                        <p className="text-2xl font-black text-[#3bc117]">{wallet.mainBalance.toFixed(2)}</p>
+                    </div>
+                    <Gamepad2 className="w-8 h-8 text-gray-700" />
+                </div>
+                <div className="bg-[#1a2c38] p-6 rounded-[2rem] border border-gray-800 flex items-center justify-between">
+                    <div>
+                        <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest mb-1">Current Score</p>
+                        <p className="text-2xl font-black text-white">{currentScore}</p>
+                    </div>
+                    <div className="px-3 py-1 bg-[#3bc117]/10 border border-[#3bc117]/20 rounded-lg text-[#3bc117] font-black text-xs">
+                        X{currentCombo} COMBO
+                    </div>
+                </div>
+                <div className="bg-[#1a2c38] p-6 rounded-[2rem] border border-[#3bc117]/20 flex items-center justify-center gap-3">
+                    <ShieldCheck className="w-6 h-6 text-[#3bc117]" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[#3bc117]">Provably Fair Authority Active</span>
+                </div>
+            </div>
+            <div 
+                ref={gameContainerRef} 
+                className="w-full aspect-[4/3] max-h-[600px] bg-[#0f212e] rounded-[3rem] overflow-hidden border-[12px] border-[#1a2c38] shadow-[0_0_100px_rgba(0,0,0,0.5)] relative cursor-crosshair"
+            />
+          </div>
+        )}
+
+        {/* Results State */}
+        <AnimatePresence>
+            {gameState === 'ended' && finalResult && (
+            <motion.div initial={{opacity:0}} animate={{opacity:1}} className="fixed inset-0 bg-black/90 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+                <motion.div initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} className="bg-[#1a2c38] border-4 border-[#3bc117] p-12 rounded-[4rem] text-center max-w-lg w-full shadow-[0_0_150px_rgba(59,193,23,0.2)]">
+                    <Trophy className="w-20 h-20 text-[#3bc117] mx-auto mb-6 drop-shadow-[0_0_20px_rgba(59,193,23,0.5)]" />
+                    <h2 className="text-5xl font-black uppercase tracking-tighter mb-2 italic">Extraction Complete</h2>
+                    <div className="text-6xl font-black text-white mb-8">{finalResult.reward.toFixed(2)} <span className="text-[#3bc117] text-2xl">TRX</span></div>
+                    
+                    <div className="grid grid-cols-2 gap-4 mb-10">
+                        <div className="bg-black/20 p-6 rounded-3xl border border-gray-800">
+                            <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Final Score</p>
+                            <p className="text-2xl font-black text-white">{finalResult.score}</p>
+                        </div>
+                        <div className="bg-black/20 p-6 rounded-3xl border border-gray-800">
+                            <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Arena Balance</p>
+                            <p className="text-2xl font-black text-[#3bc117]">{finalResult.newBalance.toFixed(2)}</p>
                         </div>
                     </div>
-                    <button
-                      onClick={() => setGameState(prev => ({ ...prev, status: 'idle' }))}
-                      className="px-12 py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 transition-colors"
+
+                    <button 
+                        onClick={() => setGameState('lobby')}
+                        className="w-full py-6 bg-[#3bc117] hover:bg-[#45d61d] text-black font-black rounded-2xl uppercase tracking-[0.2em] transition-all shadow-xl shadow-[#3bc117]/20 active:scale-95"
                     >
-                      TRY AGAIN
+                        Return to Briefing
                     </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+                </motion.div>
+            </motion.div>
+            )}
+        </AnimatePresence>
 
-          {/* Stats & Info */}
-          <div className="space-y-6">
-             <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6">
-                <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-yellow-500" /> Current Stats
-                </h3>
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-500">Level</span>
-                        <span className="font-mono font-bold">{gameState.level}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-500">Score</span>
-                        <span className="font-mono font-bold text-green-500">{gameState.score}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-500">Hits</span>
-                        <span className="font-mono font-bold">{gameState.birdsHit} / {gameState.birdsTotal}</span>
-                    </div>
-                </div>
-             </div>
-
-             <div className="bg-gray-900 border border-gray-800 rounded-3xl p-6">
-                <h3 className="font-bold text-sm text-gray-400 mb-4">HOW TO PLAY</h3>
-                <ul className="space-y-3 text-xs text-gray-500">
-                    <li className="flex gap-2">
-                        <span className="text-green-500 font-bold">01.</span>
-                        <span>Use your mouse to aim at the moving targets.</span>
-                    </li>
-                    <li className="flex gap-2">
-                        <span className="text-green-500 font-bold">02.</span>
-                        <span>Click to shoot. Accuracy and speed give higher scores.</span>
-                    </li>
-                    <li className="flex gap-2">
-                        <span className="text-green-500 font-bold">03.</span>
-                        <span>Complete the level before time runs out.</span>
-                    </li>
-                </ul>
-             </div>
-          </div>
-        </div>
       </div>
     </div>
   );

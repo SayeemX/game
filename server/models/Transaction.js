@@ -12,7 +12,7 @@ const transactionSchema = new mongoose.Schema({
     required: true 
   },
   amount: { type: Number, required: true },
-  currency: { type: String, default: 'BDT' },
+  currency: { type: String, default: 'TRX' },
   status: { 
     type: String, 
     enum: ['pending', 'completed', 'failed', 'cancelled'],

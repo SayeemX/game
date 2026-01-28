@@ -46,7 +46,10 @@ export const authAPI = {
 export const spinAPI = {
   initialize: () => api.post('/spin/initialize'),
   play: (bet) => api.post('/spin/play', { bet }),
-  verify: (hash) => api.get(`/spin/verify/${hash}`)
+  verify: (hash) => api.get(`/spin/verify/${hash}`),
+  updateClientSeed: (clientSeed) => api.post('/spin/update-client-seed', { clientSeed }),
+  rotateSeed: () => api.post('/spin/rotate-seed'),
+  verifyResult: (data) => api.post('/spin/verify', data)
 };
 
 export const gamesAPI = {
@@ -70,6 +73,12 @@ export const redeemAPI = {
   redeem: (code) => api.post('/redeem', { code })
 };
 
+export const shopAPI = {
+  getItems: () => api.get('/shop/items'),
+  buyItem: (itemId) => api.post('/shop/buy', { itemId }),
+  equipItem: (itemKey) => api.post('/shop/equip', { itemKey })
+};
+
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
   getUsers: () => api.get('/admin/users'),
@@ -77,7 +86,9 @@ export const adminAPI = {
   getCodes: () => api.get('/admin/redeem-codes'),
   createCode: (data) => api.post('/admin/redeem-codes', data),
   getSpinConfig: () => api.get('/admin/spin-config'),
-  updateSpinConfig: (data) => api.post('/admin/spin-config', data)
+  updateSpinConfig: (data) => api.post('/admin/spin-config', data),
+  getBirdConfig: () => api.get('/admin/bird-config'),
+  updateBirdConfig: (data) => api.post('/admin/bird-config', data)
 };
 
 export default api;

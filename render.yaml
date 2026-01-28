@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: sayeemx
+    name: gamex
     env: node
     plan: free
     buildCommand: cd server && npm install && cd ../client && npm install --include=dev && npm run build
@@ -14,7 +14,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CLIENT_URL
-        value: https://sayeemx.onrender.com # Update this after first deployment
+        value: https://gamex.onrender.com # Update this after first deployment
       - key: PORT
         value: 10000
       - key: VITE_API_URL

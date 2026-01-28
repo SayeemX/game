@@ -18,6 +18,7 @@ import {
   Sparkles,
   Trophy,
   Target,
+  ShoppingBag,
   Database,
   Wallet as WalletIcon
 } from 'lucide-react';
@@ -46,7 +47,7 @@ const Navbar = () => {
             <div className="w-10 h-10 bg-yellow-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/20 group-hover:scale-110 transition-transform">
                 <Gamepad2 className="w-6 h-6 text-black" />
             </div>
-            <span className="font-black text-2xl tracking-tighter uppercase text-white">Sayeem<span className="text-yellow-500">X</span></span>
+            <span className="font-black text-2xl tracking-tighter uppercase text-white">Game<span className="text-yellow-500">X</span></span>
           </Link>
 
           {/* Desktop Nav */}
@@ -55,6 +56,7 @@ const Navbar = () => {
                 { label: 'Home', path: '/', icon: Gift },
                 { label: 'Spin', path: '/spin', icon: Sparkles },
                 { label: 'Shoot', path: '/bird-shooting', icon: Target },
+                { label: 'Shop', path: '/store', icon: ShoppingBag },
                 { label: 'Elite', path: '/', icon: Trophy },
             ].map((item) => (
                 <Link 
@@ -79,7 +81,7 @@ const Navbar = () => {
                     </div>
                     <div className="flex flex-col">
                         <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">Balance</span>
-                        <span className="text-sm font-black text-white">${wallet.mainBalance.toFixed(2)}</span>
+                        <span className="text-sm font-black text-white">{wallet.mainBalance.toFixed(2)} TRX</span>
                     </div>
                 </Link>
 
@@ -169,9 +171,17 @@ const Navbar = () => {
                         {isAuthenticated && (
                             <Link to="/wallet" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">My Wallet</Link>
                         )}
+                        <Link to="/store" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Shop</Link>
                         <Link to="/spin" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Spin</Link>
                         <Link to="/bird-shooting" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Shoot</Link>
                         <Link to="/" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Leaderboard</Link>
+                        
+                        {!isAuthenticated && (
+                            <div className="flex flex-col gap-4 pt-4 border-t border-gray-800">
+                                <Link to="/login" onClick={() => setIsMenuOpen(false)} className="text-sm font-black text-gray-400 uppercase tracking-widest">Sign In</Link>
+                                <Link to="/register" onClick={() => setIsMenuOpen(false)} className="px-6 py-4 bg-yellow-500 text-black text-sm font-black rounded-xl text-center uppercase tracking-widest">Sign Up</Link>
+                            </div>
+                        )}
                     </div>
                 </div>
             </motion.div>

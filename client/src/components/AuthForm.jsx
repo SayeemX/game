@@ -17,6 +17,12 @@ const AuthForm = ({ mode = 'login' }) => {
     password: '' 
   });
 
+  // Sync with route changes
+  React.useEffect(() => {
+    setIsLogin(mode === 'login');
+    setFormData({ username: '', email: '', password: '' });
+  }, [mode]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const action = isLogin ? loginUser : registerUser;
@@ -112,7 +118,7 @@ const AuthForm = ({ mode = 'login' }) => {
               onClick={() => setIsLogin(!isLogin)}
               className="text-gray-500 text-xs font-black uppercase tracking-widest hover:text-white transition-colors"
             >
-              {isLogin ? "New to SayeemX? Create Account" : "Existing Member? Sign In"}
+              {isLogin ? "New to GameX? Create Account" : "Existing Member? Sign In"}
             </button>
           </div>
         </div>

@@ -1,35 +1,69 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trophy, Zap, Sparkles } from 'lucide-react';
+import { AuthContext } from '../context/AuthContext';
 
 const LiveWins = () => {
+  const { socket } = useContext(AuthContext);
   const [wins, setWins] = useState([
-    { id: 1, user: 'Sayeem_Elite', game: 'Fortune Spin', amount: '250.00', multiplier: '25x', color: 'text-yellow-500' },
-    { id: 2, user: 'Alpha_Gx', game: 'Bird Shoot', amount: '45.20', multiplier: '4.5x', color: 'text-blue-500' },
-    { id: 3, user: 'CryptoKing', game: 'Fortune Spin', amount: '1,200.00', multiplier: '120x', color: 'text-green-500' },
-    { id: 4, user: 'ZeroCool', game: 'Fortune Spin', amount: '80.00', multiplier: '8x', color: 'text-purple-500' },
+    { id: 1, user: 'GameX_Pro', game: 'Fortune Spin', amount: '125.50', multiplier: '12.5x', color: 'text-yellow-500' },
+    { id: 2, user: 'Rabbix_77', game: 'GameX Sniper', amount: '42.20', multiplier: '4.2x', color: 'text-blue-500' },
+    { id: 3, user: 'Karim_Boss', game: 'Fortune Spin', amount: '840.00', multiplier: '84x', color: 'text-green-500' },
+    { id: 4, user: 'Elite_Player', game: 'GameX Sniper', amount: '15.00', multiplier: '1.5x', color: 'text-purple-500' },
   ]);
 
+  const timeoutRef = useRef(null);
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const games = ['Fortune Spin', 'Bird Shoot'];
-      const users = ['Sayeem_X', 'Player_99', 'Winner_Pro', 'Lucky_One', 'Sayeem_Fan', 'Ghost_Rider'];
-      const amounts = [10.50, 50.00, 120.00, 500.00, 1500.00, 5.00];
+    if (socket) {
+        socket.on('live_win', (data) => {
+            const newWin = {
+                id: Date.now(),
+                user: data.username,
+                game: data.game,
+                amount: data.amount.toFixed(2),
+                multiplier: data.multiplier + 'x',
+                color: data.amount > 100 ? 'text-yellow-500' : 'text-[#3bc117]'
+            };
+            setWins(prev => [newWin, ...prev.slice(0, 9)]);
+        });
+    }
+
+    const generateWin = () => {
+      const prefixes = ['Sayeem', 'Elite', 'Alpha', 'Crypto', 'Winner', 'King', 'Shadow', 'Neon', 'Turbo', 'Mega', 'Sohan', 'Rakib', 'Fahim', 'Nabil', 'Arif'];
+      const suffixes = ['_X', 'X', '_Pro', '77', '_Elite', 'Boss', '_99', 'King', '_Master', '007', '_Sniper', '_Arena'];
+      const games = ['Fortune Spin', 'GameX Sniper'];
+      
+      const user = prefixes[Math.floor(Math.random() * prefixes.length)] + 
+                   suffixes[Math.floor(Math.random() * suffixes.length)];
+      
+      const game = games[Math.floor(Math.random() * games.length)];
+      const mult = (1.5 + Math.random() * 10).toFixed(1);
+      const amount = (mult * (2 + Math.random() * 5)).toFixed(2);
       
       const newWin = {
-        id: Date.now(),
-        user: users[Math.floor(Math.random() * users.length)],
-        game: games[Math.floor(Math.random() * games.length)],
-        amount: amounts[Math.floor(Math.random() * amounts.length)].toFixed(2),
-        multiplier: (Math.random() * 50).toFixed(1) + 'x',
-        color: ['text-yellow-500', 'text-blue-500', 'text-green-500', 'text-purple-500'][Math.floor(Math.random() * 4)]
+        id: Date.now() + Math.random(),
+        user,
+        game,
+        amount,
+        multiplier: mult + 'x',
+        color: ['text-yellow-500', 'text-blue-500', 'text-[#3bc117]', 'text-purple-500', 'text-orange-500'][Math.floor(Math.random() * 5)]
       };
 
       setWins(prev => [newWin, ...prev.slice(0, 9)]);
-    }, 4000);
+      
+      // Schedule next win at a random interval between 5-15 seconds (less frequent if fake)
+      const nextTime = 5000 + Math.random() * 10000;
+      timeoutRef.current = setTimeout(generateWin, nextTime);
+    };
 
-    return () => clearInterval(interval);
-  }, []);
+    timeoutRef.current = setTimeout(generateWin, 3000);
+
+    return () => {
+        clearTimeout(timeoutRef.current);
+        if (socket) socket.off('live_win');
+    };
+  }, [socket]);
 
   return (
     <div className="w-full bg-[#1a2c38]/30 backdrop-blur-md border-y border-gray-800 overflow-hidden py-4">
@@ -61,7 +95,7 @@ const LiveWins = () => {
                             </div>
                         </div>
                         <div className="text-right">
-                            <div className={`text-xs font-black ${win.color}`}>+${win.amount}</div>
+                            <div className={`text-xs font-black ${win.color}`}>+{win.amount} TRX</div>
                             <div className="text-[9px] text-gray-600 font-bold">{win.multiplier}</div>
                         </div>
                     </motion.div>

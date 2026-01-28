@@ -12,6 +12,7 @@ import AuthForm from './components/AuthForm'; // Will check/update this next
 import Home from './pages/Home';
 import Profile from './pages/Profile';
 import Wallet from './pages/Wallet';
+import Store from './pages/Store';
 import AdminDashboard from './pages/AdminDashboard';
 import SpinWheel from './components/games/SpinWheel';
 import BirdShooting from './components/games/BirdShooting';
@@ -28,13 +29,14 @@ const AppContent = () => {
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-white font-sans selection:bg-yellow-500 selection:text-black">
-      <Router>
+      <Router basename="/GameX">
         <Navbar />
         <main>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/wallet" element={<Wallet />} />
+            <Route path="/store" element={<Store />} />
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/spin" element={<SpinWheel />} />
             <Route path="/bird-shooting" element={<BirdShooting />} />
@@ -48,7 +50,7 @@ const AppContent = () => {
         
         {/* Footer simple */}
         <footer className="py-12 border-t border-gray-900 bg-black text-center text-gray-600 text-[10px] font-bold uppercase tracking-[0.2em]">
-            © 2026 SAYEEMX ELITE GAMING ARENA • ALL RIGHTS RESERVED
+            © 2026 GAMEX ELITE GAMING ARENA • ALL RIGHTS RESERVED
         </footer>
       </Router>
     </div>
