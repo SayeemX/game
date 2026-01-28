@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Provider, useDispatch } from 'react-redux';
 import { store } from './redux/store';
 import { fetchUserProfile } from './redux/slices/userSlice';
+import { AuthProvider } from './context/AuthContext';
 
 // Layout & Components
 import Navbar from './components/layout/Navbar';
@@ -59,7 +60,9 @@ const AppContent = () => {
 
 const App = () => (
   <Provider store={store}>
-    <AppContent />
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   </Provider>
 );
 

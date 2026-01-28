@@ -17,7 +17,7 @@ export const AuthProvider = ({ children }) => {
       fetchUser();
 
       // Initialize Socket
-      const socketUrl = window.location.origin.replace('3000', '3001');
+      const socketUrl = window.location.origin;
       const newSocket = io(socketUrl, {
           auth: { token }
       });
