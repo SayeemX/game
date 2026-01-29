@@ -24,7 +24,8 @@ router.get('/items', auth, async (req, res) => {
 
         res.json(itemsWithStatus);
     } catch (err) {
-        res.status(500).json({ error: 'Server error' });
+        console.error('Shop Items Error:', err);
+        res.status(500).json({ error: 'Server error: ' + err.message });
     }
 });
 
@@ -200,7 +201,8 @@ router.post('/buy-spins', auth, async (req, res) => {
             wallet: user.wallet 
         });
     } catch (err) {
-        res.status(500).json({ error: 'Server error' });
+        console.error('Buy Spins Error:', err);
+        res.status(500).json({ error: 'Server error: ' + err.message });
     }
 });
 

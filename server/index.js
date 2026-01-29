@@ -36,17 +36,26 @@ app.use(helmet({
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
+  'https://gamex-th2n.onrender.com',
   process.env.CLIENT_URL,
-  process.env.ADDITIONAL_ORIGINS // For production domains
+  process.env.ADDITIONAL_ORIGINS
 ].filter(Boolean);
 
 app.use(cors({
   origin: function(origin, callback) {
-    if(!origin) return callback(null, true);
-    if(allowedOrigins.indexOf(origin) === -1 && process.env.NODE_ENV === 'production'){
+    // Allow requests with no origin (like mobile apps, curl, or same-origin static files)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    } else {
+      // Check if it's a subdomain or variations
+      const isAllowed = allowedOrigins.some(allowed => origin.startsWith(allowed));
+      if (isAllowed) return callback(null, true);
+      
+      console.error(`CORS Blocked: ${origin}`);
       return callback(new Error('CORS policy violation'), false);
     }
-    return callback(null, true);
   },
   credentials: true
 }));
@@ -62,7 +71,23 @@ if (!MONGO_URI) {
 }
 
 mongoose.connect(MONGO_URI)
-.then(() => console.log('✅ MongoDB Connected Successfully'))
+.then(async () => {
+  console.log('✅ MongoDB Connected Successfully');
+  
+  // Auto-seed weapons if empty
+  try {
+    const count = await BirdWeapon.countDocuments();
+    if (count === 0) {
+      console.log('🌱 Seeding initial weapons...');
+      const initialWeapons = [
+        { name: "Basic Wooden Bow", key: "basic_bow", type: "bow", damage: 1, price: 0 },
+        { name: "Recurve Hunter", key: "recurve_bow", type: "bow", damage: 1.5, price: 100 },
+        { name: "Shadow Sniper", key: "shadow_sniper", type: "airgun", damage: 2.5, price: 1000 }
+      ];
+      await BirdWeapon.insertMany(initialWeapons);
+    }
+  } catch (e) { console.error('Seeding failed:', e); }
+})
 .catch(err => {
   console.error('❌ MongoDB Connection Error:', err);
   process.exit(1);
@@ -125,6 +150,7 @@ io.on('connection', (socket) => {
 
             // Ammo Check & Deduction
             const ammoType = weaponStats.type === 'bow' ? 'arrow' : 'pellet';
+            if (!user.inventory.items) user.inventory.items = [];
             const ammoItem = user.inventory.items.find(i => i.itemKey === ammoType);
             const ammoRequired = 20;
 
