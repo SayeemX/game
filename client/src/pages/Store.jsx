@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -19,7 +20,7 @@ import { updateWallet, setUserData } from '../redux/slices/userSlice';
 
 const Store = () => {
   const dispatch = useDispatch();
-  const { wallet } = useSelector(state => state.user);
+  const { wallet, isAuthenticated } = useSelector(state => state.user);
   
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,8 +28,12 @@ const Store = () => {
   const [status, setStatus] = useState({ type: '', message: '' });
 
   useEffect(() => {
-    fetchItems();
-  }, []);
+    if (isAuthenticated) {
+        fetchItems();
+    } else {
+        setLoading(false);
+    }
+  }, [isAuthenticated]);
 
   const fetchItems = async () => {
     try {
@@ -97,6 +102,16 @@ const Store = () => {
         {loading ? (
             <div className="flex justify-center py-20">
                 <Loader2 className="w-12 h-12 text-[#3bc117] animate-spin" />
+            </div>
+        ) : !isAuthenticated ? (
+            <div className="bg-[#1a2c38] border border-gray-800 rounded-[3rem] p-20 text-center">
+                <Lock className="w-16 h-16 text-gray-700 mx-auto mb-6" />
+                <h2 className="text-3xl font-black uppercase mb-4">Access Restricted</h2>
+                <p className="text-gray-500 font-bold mb-8 max-w-md mx-auto">You must be an authorized member to access the Elite Armory and purchase legendary gear.</p>
+                <div className="flex justify-center gap-4">
+                    <Link to="/login" className="px-10 py-4 bg-yellow-500 text-black font-black rounded-2xl uppercase tracking-widest hover:scale-105 transition-transform">Sign In</Link>
+                    <Link to="/register" className="px-10 py-4 bg-white/5 hover:bg-white/10 text-white font-black rounded-2xl uppercase tracking-widest transition-colors">Join Elite</Link>
+                </div>
             </div>
         ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

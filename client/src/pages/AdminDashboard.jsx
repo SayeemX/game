@@ -24,6 +24,7 @@ const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
   const [codes, setCodes] = useState([]);
   const [spinConfig, setSpinConfig] = useState(null);
+  const [birdConfig, setBirdConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 

@@ -16,7 +16,10 @@ export const AuthProvider = ({ children }) => {
       fetchUser();
 
       // Initialize Socket
-      const socketUrl = window.location.origin;
+      // Get the base URL from API_URL (remove /api if present)
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const socketUrl = apiUrl ? apiUrl.replace(/\/api$/, '') : window.location.origin;
+      
       const newSocket = io(socketUrl, {
           auth: { token }
       });

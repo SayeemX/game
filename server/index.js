@@ -26,6 +26,7 @@ const allowedOrigins = [
   'http://localhost:3001',
   'http://localhost:5173',
   'https://game.github.io',
+  'https://SayeemX.github.io',
   'https://gamex-th2n.onrender.com',
   process.env.CLIENT_URL
 ].filter(Boolean);

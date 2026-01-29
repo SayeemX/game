@@ -8,10 +8,25 @@ const User = require('../models/User');
  */
 module.exports = async function(req, res, next) {
   try {
-    const user = await User.findById(req.user.id);
+    const userId = req.userId || req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ msg: 'No user ID found, authorization denied' });
+    }
+
+    const user = await User.findById(userId);
     
-    if (!user || user.role !== 'admin' || user.username !== process.env.ADMIN_USERNAME) {
-      return res.status(403).json({ msg: 'Access denied. This area is restricted to the primary administrator.' });
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+    
+    // Check if user is the primary admin by username OR has the 'admin' role
+    const adminUsername = process.env.ADMIN_USERNAME;
+    const isPrimaryAdmin = adminUsername && user.username.toLowerCase() === adminUsername.toLowerCase();
+    const hasAdminRole = user.role === 'admin';
+
+    if (!isPrimaryAdmin && !hasAdminRole) {
+      console.log(`Forbidden admin access attempt by: ${user.username} (Role: ${user.role})`);
+      return res.status(403).json({ msg: 'Access denied. This area is restricted to administrators.' });
     }
     
     next();

@@ -21,6 +21,9 @@ import BirdShooting from './components/games/BirdShooting';
 const AppContent = () => {
   const dispatch = useDispatch();
   const token = localStorage.getItem('token');
+  
+  // Dynamically determine basename for GitHub Pages vs Render
+  const basename = window.location.hostname.includes('github.io') ? '/game' : '/';
 
   useEffect(() => {
     if (token) {
@@ -30,7 +33,7 @@ const AppContent = () => {
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-white font-sans selection:bg-yellow-500 selection:text-black">
-      <Router>
+      <Router basename={basename}>
         <Navbar />
         <main>
           <Routes>

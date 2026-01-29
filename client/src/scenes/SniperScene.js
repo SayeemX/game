@@ -29,25 +29,29 @@ export default class SniperScene extends Phaser.Scene {
   }
 
   preload() {
+    // Set base path for all assets
+    const baseUrl = import.meta.env.BASE_URL || '/';
+    this.load.setPath(`${baseUrl}assets/`);
+
     // UI & Environment Assets
-    this.load.image('crosshair', 'assets/ui/crosshair.png');
-    this.load.image('arrow', 'assets/projectiles/arrowx.png');
-    this.load.image('pellet', 'assets/projectiles/pellet.png');
-    this.load.image('sky', 'assets/environment/sky_day.png');
-    this.load.image('trees', 'assets/environment/trees.png');
-    this.load.image('ground', 'assets/environment/ground.png');
-    this.load.image('feather', 'assets/effects/feather.png');
-    this.load.image('spark', 'assets/effects/spark.png');
+    this.load.image('crosshair', 'ui/crosshair.png');
+    this.load.image('arrow', 'projectiles/arrowx.png');
+    this.load.image('pellet', 'projectiles/pellet.png');
+    this.load.image('sky', 'environment/sky_day.png');
+    this.load.image('trees', 'environment/trees.png');
+    this.load.image('ground', 'environment/ground.png');
+    this.load.image('feather', 'effects/feather.png');
+    this.load.image('spark', 'effects/spark.png');
     
     // Bird Assets - Spritesheets for animations
     const birdTypes = ['eagle', 'pigeon', 'sparrow', 'rare'];
     birdTypes.forEach(type => {
         if (type === 'eagle') {
             // Eagle: 64x192 total -> 64x32 per frame, 6 frames
-            this.load.spritesheet(`${type}_fly`, `assets/birds/${type}/fly.png`, { frameWidth: 64, frameHeight: 32 });
+            this.load.spritesheet(`${type}_fly`, `birds/${type}/fly.png`, { frameWidth: 64, frameHeight: 32 });
         } else {
             // Others: 192x64 total -> 64x64 per frame, 3 frames
-            this.load.spritesheet(`${type}_fly`, `assets/birds/${type}/fly.png`, { frameWidth: 64, frameHeight: 64 });
+            this.load.spritesheet(`${type}_fly`, `birds/${type}/fly.png`, { frameWidth: 64, frameHeight: 64 });
         }
     });
 
