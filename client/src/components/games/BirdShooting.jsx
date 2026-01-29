@@ -218,6 +218,7 @@ class BirdSystem3D {
 class BowSystem3D {
   constructor(game) {
     this.game = game;
+    this.loader = new THREE.TextureLoader();
     this.bow = null;
     this.arrow = null;
     this.isDrawn = false;
@@ -235,17 +236,25 @@ class BowSystem3D {
   initBow() {
     this.bow = new THREE.Group();
     
-    // Riser
+    // Load Bow Texture
+    const loader = new THREE.TextureLoader();
+    const bowTex = loader.load('/assets/weapons/wooden_bow.png');
+    const bowMat = new THREE.MeshStandardMaterial({ 
+        map: bowTex, 
+        transparent: true,
+        side: THREE.DoubleSide
+    });
+    
+    // Create a curved plane or simple plane for the bow
     const riser = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.6, 0.05),
-      new THREE.MeshStandardMaterial({ color: 0x8B4513 })
+      new THREE.PlaneGeometry(0.8, 0.8),
+      bowMat
     );
     this.bow.add(riser);
     
     // Position bow relative to camera
-    // We attach it to a "hand" group that follows camera rotation but is slightly offset
-    this.bow.position.set(0.2, -0.3, -0.5);
-    this.bow.rotation.y = -Math.PI / 2; // Face forward
+    this.bow.position.set(0.3, -0.4, -0.6);
+    this.bow.rotation.y = -0.2; 
     this.game.camera.add(this.bow);
   }
 
@@ -278,21 +287,59 @@ class BowSystem3D {
   }
 
   setupInputs() {
-    // We'll hook into the game container's events via the Game class
     const element = this.game.container;
+    this.isDragging = false;
+    this.lastTouchX = 0;
+    this.lastTouchY = 0;
     
-    element.addEventListener('mousedown', this.handleMouseDown.bind(this));
+    element.addEventListener('mousedown', (e) => {
+        // Only trigger draw if not clicking a UI button
+        if (e.target.closest('button')) return;
+        this.handleMouseDown(e);
+    });
     element.addEventListener('mouseup', this.handleMouseUp.bind(this));
-    element.addEventListener('mousemove', this.handleMouseMove.bind(this));
     
-    // Touch support
-    element.addEventListener('touchstart', (e) => { e.preventDefault(); this.handleMouseDown(e); }, {passive: false});
-    element.addEventListener('touchend', (e) => { e.preventDefault(); this.handleMouseUp(e); }, {passive: false});
-    element.addEventListener('touchmove', (e) => { e.preventDefault(); this.handleMouseMove(e); }, {passive: false});
+    // Decoupled aiming: only move if scoped and not clicking FIRE
+    window.addEventListener('mousemove', (e) => {
+        if (this.isScoped && !this.game.isFiringClick) {
+            this.handleMouseMove(e);
+        }
+    });
+    
+    // Mobile Touch Logic
+    element.addEventListener('touchstart', (e) => {
+        if (e.target.closest('button')) return;
+        const touch = e.touches[0];
+        this.lastTouchX = touch.clientX;
+        this.lastTouchY = touch.clientY;
+        this.isDragging = true;
+        this.handleMouseDown(e);
+    }, { passive: false });
+
+    element.addEventListener('touchend', (e) => {
+        this.isDragging = false;
+        this.handleMouseUp(e);
+    }, { passive: false });
+
+    element.addEventListener('touchmove', (e) => {
+        if (!this.isScoped || !this.isDragging) return;
+        
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - this.lastTouchX;
+        const deltaY = touch.clientY - this.lastTouchY;
+        
+        this.lastTouchX = touch.clientX;
+        this.lastTouchY = touch.clientY;
+
+        // Apply swipe aiming
+        this.game.camera.rotation.y -= deltaX * 0.004;
+        this.game.camera.rotation.x -= deltaY * 0.004;
+        this.game.camera.rotation.order = 'YXZ';
+    }, { passive: false });
   }
 
   handleMouseDown(e) {
-    if (this.isScoped) return; // Wait for shoot button if scoped
+    if (this.isScoped) return;
     this.isDrawn = true;
     this.drawStartTime = Date.now();
     this.game.haptics.trigger('draw_start');
@@ -308,11 +355,10 @@ class BowSystem3D {
 
   handleMouseMove(e) {
       if (this.isScoped) {
-         // Aiming logic
+         // Smooth delta-based aiming
          const movementX = e.movementX || 0;
          const movementY = e.movementY || 0;
          
-         // Rotate camera
          this.game.camera.rotation.y -= movementX * 0.002;
          this.game.camera.rotation.x -= movementY * 0.002;
          this.game.camera.rotation.order = 'YXZ';
@@ -475,6 +521,7 @@ class HuntingGame3D {
   initThree() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87CEEB);
+    this.scene.fog = new THREE.FogExp2(0x87CEEB, 0.01); // Add atmospheric depth
     
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
@@ -511,6 +558,7 @@ class HuntingGame3D {
       groundTex.wrapS = THREE.RepeatWrapping;
       groundTex.wrapT = THREE.RepeatWrapping;
       groundTex.repeat.set(50, 50);
+      groundTex.colorSpace = THREE.SRGBColorSpace; // Standard color mapping
       
       const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -589,12 +637,20 @@ class HuntingGame3D {
           
           arrow.mesh.position.copy(arrow.body.position);
           
-          // Simple alignment to velocity
-          const velocity = arrow.body.velocity;
-          if (velocity.lengthSquared() > 0.1) {
-              const direction = new THREE.Vector3(velocity.x, velocity.y, velocity.z).normalize();
-              const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
-            //   arrow.mesh.quaternion.copy(quaternion); // This is jittery without smoothing, skipping for now
+          // Align arrow to its velocity vector
+          const vel = arrow.body.velocity;
+          if (vel.lengthSquared() > 1) {
+              const direction = new THREE.Vector3(vel.x, vel.y, vel.z).normalize();
+              const up = new THREE.Vector3(0, 1, 0);
+              const mx = new THREE.Matrix4().lookAt(
+                  new THREE.Vector3(0, 0, 0),
+                  direction,
+                  up
+              );
+              const qt = new THREE.Quaternion().setFromRotationMatrix(mx);
+              arrow.mesh.quaternion.copy(qt);
+              // Standard cylinder is Y-up, our arrow needs to point along Z
+              arrow.mesh.rotateX(Math.PI / 2);
           }
 
           // Collision Check
@@ -654,6 +710,7 @@ const BirdShooting = () => {
 
   const gameContainerRef = useRef(null);
   const gameInstanceRef = useRef(null);
+  const isFiringRef = useRef(false);
   const dispatch = useDispatch();
   const { wallet } = useSelector(state => state.user);
 
@@ -768,7 +825,11 @@ const BirdShooting = () => {
 
   const handleShoot = () => {
       if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
+          gameInstanceRef.current.isFiringClick = true;
           gameInstanceRef.current.bowSystem.shoot();
+          setTimeout(() => {
+              if (gameInstanceRef.current) gameInstanceRef.current.isFiringClick = false;
+          }, 100);
       }
   };
 
