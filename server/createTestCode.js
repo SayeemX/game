@@ -4,7 +4,8 @@ const RedeemCode = require('./models/RedeemCode');
 
 const createCode = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
+    const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+    await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB');
 
     const code = new RedeemCode({

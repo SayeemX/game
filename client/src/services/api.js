@@ -76,7 +76,9 @@ export const redeemAPI = {
 export const shopAPI = {
   getItems: () => api.get('/shop/items'),
   buyItem: (itemId) => api.post('/shop/buy', { itemId }),
-  equipItem: (itemKey) => api.post('/shop/equip', { itemKey })
+  buyAmmo: (itemKey) => api.post('/shop/buy', { itemKey, type: 'ammo' }),
+  equipItem: (itemKey) => api.post('/shop/equip', { itemKey }),
+  buySpins: (amount) => api.post('/shop/buy-spins', { amount })
 };
 
 export const adminAPI = {
@@ -88,7 +90,12 @@ export const adminAPI = {
   getSpinConfig: () => api.get('/admin/spin-config'),
   updateSpinConfig: (data) => api.post('/admin/spin-config', data),
   getBirdConfig: () => api.get('/admin/bird-config'),
-  updateBirdConfig: (data) => api.post('/admin/bird-config', data)
+  updateBirdConfig: (data) => api.post('/admin/bird-config', data),
+  // Shop management
+  getShopItems: () => api.get('/admin/shop-items'),
+  createShopItem: (data) => api.post('/admin/shop-items', data),
+  updateShopItem: (id, data) => api.put(`/admin/shop-items/${id}`, data),
+  deleteShopItem: (id) => api.delete(`/admin/shop-items/${id}`)
 };
 
 export default api;

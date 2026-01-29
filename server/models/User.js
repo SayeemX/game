@@ -23,6 +23,11 @@ const userSchema = new mongoose.Schema({
       weaponId: { type: mongoose.Schema.Types.ObjectId, ref: 'BirdWeapon' },
       purchasedAt: { type: Date, default: Date.now }
     }],
+    items: [{
+      itemKey: String,
+      amount: { type: Number, default: 0 },
+      purchasedAt: { type: Date, default: Date.now }
+    }],
     equippedWeapon: { type: String, default: 'basic_bow' } // Stores the weapon key
   },
   

@@ -37,6 +37,17 @@ const gameSchema = new mongoose.Schema({
     active: { type: Boolean, default: true }
   },
   
+  // Shop Configuration (Consumables)
+  shop: {
+    consumables: [{
+      itemKey: String,
+      name: String,
+      amount: Number,
+      price: Number,
+      active: { type: Boolean, default: true }
+    }]
+  },
+  
   // General
   maintenance: { type: Boolean, default: false },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

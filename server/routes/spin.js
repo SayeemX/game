@@ -141,12 +141,21 @@ router.post('/play', auth, async (req, res) => {
                 user.wallet.spinCredits += winningPrize.value;
                 break;
             case 'weapon':
-                if (!user.inventory.items.includes(winningPrize.itemKey)) {
-                    user.inventory.items.push(winningPrize.itemKey);
+                const weapon = await BirdWeapon.findOne({ key: winningPrize.itemKey });
+                if (weapon) {
+                    const alreadyOwned = user.inventory.weapons.some(w => w.weaponId.toString() === weapon._id.toString());
+                    if (!alreadyOwned) {
+                        user.inventory.weapons.push({ weaponId: weapon._id });
+                    }
                 }
                 break;
             case 'item':
-                user.inventory.items.push(`${winningPrize.value}x_${winningPrize.itemKey}`);
+                const itemIndex = user.inventory.items.findIndex(i => i.itemKey === winningPrize.itemKey);
+                if (itemIndex > -1) {
+                    user.inventory.items[itemIndex].amount += winningPrize.value;
+                } else {
+                    user.inventory.items.push({ itemKey: winningPrize.itemKey, amount: winningPrize.value });
+                }
                 break;
         }
         user.wallet.totalWon += (winningPrize.type === 'balance' || winningPrize.type === 'jackpot') ? winningPrize.value : 0;

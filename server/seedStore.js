@@ -1,6 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const BirdWeapon = require('./models/BirdWeapon');
+const Game = require('./models/Game');
 
 const weapons = [
   {
@@ -45,16 +46,35 @@ const weapons = [
   }
 ];
 
+const consumables = [
+  { itemKey: 'arrow', name: 'Arrows (50x)', amount: 50, price: 5, active: true },
+  { itemKey: 'pellet', name: 'Pellets (100x)', amount: 100, price: 5, active: true }
+];
+
 const seedStore = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
+    await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB for seeding store...');
     
     for (const w of weapons) {
       await BirdWeapon.findOneAndUpdate({ key: w.key }, w, { upsert: true, new: true });
     }
     
-    console.log('✅ Store seeded successfully!');
+    // Seed Consumables in Game Config
+    let gameConfig = await Game.findOne();
+    if (!gameConfig) {
+      gameConfig = new Game({
+        spinGame: { prizes: [] },
+        birdShooting: { entryFee: 10 },
+        shop: { consumables }
+      });
+    } else {
+      gameConfig.shop = { consumables };
+    }
+    await gameConfig.save();
+    
+    console.log('✅ Store & Consumables seeded successfully!');
     process.exit(0);
   } catch (err) {
     console.error(err);

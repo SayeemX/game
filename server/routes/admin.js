@@ -115,6 +115,56 @@ router.get('/redeem-codes', auth, admin, async (req, res) => {
 });
 
 const Game = require('../models/Game');
+const BirdWeapon = require('../models/BirdWeapon');
+
+// --- Shop Management ---
+
+// @route   GET api/admin/shop-items
+// @desc    Get all shop items for management
+router.get('/shop-items', auth, admin, async (req, res) => {
+    try {
+        const items = await BirdWeapon.find().sort({ price: 1 });
+        res.json(items);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// @route   POST api/admin/shop-items
+// @desc    Create a new shop item
+router.post('/shop-items', auth, admin, async (req, res) => {
+    try {
+        const newItem = new BirdWeapon(req.body);
+        await newItem.save();
+        res.json(newItem);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// @route   PUT api/admin/shop-items/:id
+// @desc    Update a shop item
+router.put('/shop-items/:id', auth, admin, async (req, res) => {
+    try {
+        const item = await BirdWeapon.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!item) return res.status(404).json({ error: 'Item not found' });
+        res.json(item);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// @route   DELETE api/admin/shop-items/:id
+// @desc    Delete a shop item
+router.delete('/shop-items/:id', auth, admin, async (req, res) => {
+    try {
+        const item = await BirdWeapon.findByIdAndDelete(req.params.id);
+        if (!item) return res.status(404).json({ error: 'Item not found' });
+        res.json({ success: true, message: 'Item deleted' });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 // @route   GET api/admin/spin-config
 // @desc    Get spin game config
@@ -171,7 +221,7 @@ router.post('/spin-config', auth, admin, async (req, res) => {
 router.get('/bird-config', auth, admin, async (req, res) => {
     try {
         let config = await Game.findOne();
-        res.json(config ? config.birdShooting : { entryFee: 10 });
+        res.json(config ? { ...config.birdShooting, consumables: config.shop?.consumables || [] } : { entryFee: 10, consumables: [] });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
@@ -181,19 +231,25 @@ router.get('/bird-config', auth, admin, async (req, res) => {
 // @desc    Update bird shooting game config
 router.post('/bird-config', auth, admin, async (req, res) => {
     try {
-        const { entryFee, active } = req.body;
+        const { entryFee, active, consumables } = req.body;
         let config = await Game.findOne();
         if (!config) {
-            config = new Game({ birdShooting: { entryFee, active } });
+            config = new Game({ 
+                birdShooting: { entryFee, active },
+                shop: { consumables: consumables || [] }
+            });
         } else {
             config.birdShooting = { 
                 ...config.birdShooting, 
                 entryFee: entryFee !== undefined ? entryFee : config.birdShooting.entryFee,
                 active: active !== undefined ? active : config.birdShooting.active
             };
+            if (consumables) {
+                config.shop = { ...config.shop, consumables };
+            }
         }
         await config.save();
-        res.json(config.birdShooting);
+        res.json({ ...config.birdShooting, consumables: config.shop?.consumables || [] });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }

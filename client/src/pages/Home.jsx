@@ -119,8 +119,8 @@ const Home = () => {
                         Enter Fortune Arena
                         <ArrowRight className="w-6 h-6 group-hover:translate-x-2 transition-transform" />
                     </Link>
-                    <Link to="/profile" className="px-12 py-6 bg-gray-900/50 hover:bg-gray-800 text-white font-black rounded-[2rem] border-2 border-gray-800 hover:border-yellow-500/50 transition-all uppercase tracking-[0.2em] text-xl backdrop-blur-xl">
-                        Elite Profile
+                    <Link to="/store" className="px-12 py-6 bg-gray-900/50 hover:bg-gray-800 text-white font-black rounded-[2rem] border-2 border-gray-800 hover:border-[#3bc117]/50 transition-all uppercase tracking-[0.2em] text-xl backdrop-blur-xl flex items-center gap-3">
+                        Visit Armory
                     </Link>
                 </div>
               ) : (
@@ -175,6 +175,14 @@ const Home = () => {
                 icon={Target}
                 color="from-cyan-400 via-blue-500 to-indigo-600"
                 players="2.1k"
+            />
+            <GameCard 
+                title="Elite Armory"
+                description="Upgrade your arsenal with precision weapons. High-tier gear increases damage and accuracy for maximum rewards."
+                path="/store"
+                icon={Zap}
+                color="from-[#3bc117] to-[#1a2c38]"
+                players="NEW"
             />
             <motion.div 
                 whileHover={{ y: -5 }}

@@ -23,6 +23,7 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [codes, setCodes] = useState([]);
+  const [shopItems, setShopItems] = useState([]);
   const [spinConfig, setSpinConfig] = useState(null);
   const [birdConfig, setBirdConfig] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +32,8 @@ const AdminDashboard = () => {
   // Form states
   const [balanceForm, setBalanceForm] = useState({ userId: '', amount: '', type: 'main', description: '' });
   const [codeForm, setCodeForm] = useState({ code: '', rewardType: 'SPIN_CREDIT', rewardValue: '', maxRedemptions: 1, expiresAt: '' });
+  const [shopForm, setShopForm] = useState({ name: '', key: '', type: 'bow', damage: 1, fireRate: 500, accuracy: 1.0, price: 0 });
+  const [editingItem, setEditingItem] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
   const [formStatus, setFormStatus] = useState({ type: '', message: '' });
 
@@ -50,6 +53,9 @@ const AdminDashboard = () => {
       } else if (activeTab === 'codes') {
         const res = await adminAPI.getCodes();
         setCodes(res.data);
+      } else if (activeTab === 'shop') {
+        const res = await adminAPI.getShopItems();
+        setShopItems(res.data);
       } else if (activeTab === 'spin') {
         const res = await adminAPI.getSpinConfig();
         setSpinConfig(res.data);
@@ -94,6 +100,32 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleUpdateConsumable = (key, field, value) => {
+    const consumables = birdConfig.consumables || [
+        { itemKey: 'arrow', name: 'Arrows', amount: 50, price: 5, active: true },
+        { itemKey: 'pellet', name: 'Pellets', amount: 100, price: 5, active: true }
+    ];
+    const index = consumables.findIndex(c => c.itemKey === key);
+    if (index > -1) {
+        consumables[index] = { ...consumables[index], [field]: parseFloat(value) };
+    } else {
+        consumables.push({ itemKey: key, name: key === 'arrow' ? 'Arrows' : 'Pellets', [field]: parseFloat(value), active: true });
+    }
+    setBirdConfig({ ...birdConfig, consumables });
+  };
+
+  const handleSaveConsumables = async () => {
+    setFormLoading(true);
+    try {
+        await adminAPI.updateBirdConfig(birdConfig);
+        setFormStatus({ type: 'success', message: 'Consumables updated!' });
+    } catch (err) {
+        setFormStatus({ type: 'error', message: 'Update failed' });
+    } finally {
+        setFormLoading(false);
+    }
+  };
+
   const handleUpdateBalance = async (e) => {
     e.preventDefault();
     setFormLoading(true);
@@ -126,6 +158,37 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleShopSubmit = async (e) => {
+    e.preventDefault();
+    setFormLoading(true);
+    try {
+        if (editingItem) {
+            await adminAPI.updateShopItem(editingItem._id, shopForm);
+            setFormStatus({ type: 'success', message: 'Item updated!' });
+        } else {
+            await adminAPI.createShopItem(shopForm);
+            setFormStatus({ type: 'success', message: 'Item created!' });
+        }
+        setShopForm({ name: '', key: '', type: 'bow', damage: 1, fireRate: 500, accuracy: 1.0, price: 0 });
+        setEditingItem(null);
+        fetchData();
+    } catch (err) {
+        setFormStatus({ type: 'error', message: 'Operation failed' });
+    } finally {
+        setFormLoading(false);
+    }
+  };
+
+  const handleDeleteItem = async (id) => {
+      if (!window.confirm('Delete this item?')) return;
+      try {
+          await adminAPI.deleteShopItem(id);
+          fetchData();
+      } catch (err) {
+          alert('Delete failed');
+      }
+  };
+
   if (user?.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0d1117] text-white p-4">
@@ -150,7 +213,7 @@ const AdminDashboard = () => {
             </div>
             
             <div className="flex bg-[#1a2c38] p-1.5 rounded-2xl border border-gray-800">
-                {['overview', 'users', 'codes', 'spin', 'bird'].map(tab => (
+                {['overview', 'users', 'codes', 'shop', 'spin', 'bird'].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -174,6 +237,142 @@ const AdminDashboard = () => {
                         <StatCard label="Total Economy" value={`${stats.totalBalance.toFixed(2)} TRX`} icon={DollarSign} color="text-green-500" />
                         <StatCard label="Bonus Pool" value={`${stats.totalBonus.toFixed(2)} TRX`} icon={Gift} color="text-purple-500" />
                         <StatCard label="Transactions" value={stats.totalTransactions} icon={TrendingUp} color="text-yellow-500" />
+                    </div>
+                )}
+
+                {activeTab === 'shop' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div className="bg-[#1a2c38] border border-gray-800 rounded-[2.5rem] p-8 h-fit">
+                            <h2 className="text-xl font-black uppercase tracking-tighter mb-6">{editingItem ? 'Edit Item' : 'Add Shop Item'}</h2>
+                            <form onSubmit={handleShopSubmit} className="space-y-4">
+                                <div>
+                                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Item Name</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
+                                        value={shopForm.name}
+                                        onChange={e => setShopForm({ ...shopForm, name: e.target.value })}
+                                        placeholder="Elite Airgun"
+                                        required
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Key</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
+                                            value={shopForm.key}
+                                            onChange={e => setShopForm({ ...shopForm, key: e.target.value })}
+                                            placeholder="pro_airgun"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Type</label>
+                                        <select 
+                                            className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold outline-none focus:border-yellow-500"
+                                            value={shopForm.type}
+                                            onChange={e => setShopForm({ ...shopForm, type: e.target.value })}
+                                        >
+                                            <option value="bow">Bow</option>
+                                            <option value="airgun">Airgun</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Dmg</label>
+                                        <input type="number" step="0.1" className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold" value={shopForm.damage} onChange={e => setShopForm({ ...shopForm, damage: parseFloat(e.target.value) })} />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Rate(ms)</label>
+                                        <input type="number" className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold" value={shopForm.fireRate} onChange={e => setShopForm({ ...shopForm, fireRate: parseInt(e.target.value) })} />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest block mb-2">Price</label>
+                                        <input type="number" className="w-full p-4 bg-black border border-gray-800 rounded-2xl text-sm font-bold" value={shopForm.price} onChange={e => setShopForm({ ...shopForm, price: parseFloat(e.target.value) })} />
+                                    </div>
+                                </div>
+                                <button type="submit" disabled={formLoading} className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl uppercase tracking-widest transition-all">
+                                    {formLoading ? <Loader2 className="animate-spin mx-auto w-5 h-5" /> : (editingItem ? 'Update Item' : 'Create Item')}
+                                </button>
+                                {editingItem && <button type="button" onClick={() => { setEditingItem(null); setShopForm({ name: '', key: '', type: 'bow', damage: 1, fireRate: 500, accuracy: 1.0, price: 0 }); }} className="w-full text-[10px] font-black uppercase text-gray-500 hover:text-white mt-2">Cancel Edit</button>}
+                            </form>
+
+                            <div className="mt-12 pt-12 border-t border-gray-800">
+                                <h2 className="text-xl font-black uppercase tracking-tighter mb-6 text-orange-500">Manage Consumables</h2>
+                                <div className="space-y-4">
+                                    {['arrow', 'pellet'].map(key => {
+                                        const config = birdConfig?.consumables?.find(c => c.itemKey === key) || { name: key === 'arrow' ? 'Arrows' : 'Pellets', amount: key === 'arrow' ? 50 : 100, price: 5 };
+                                        return (
+                                            <div key={key} className="p-4 bg-black/40 border border-gray-800 rounded-2xl">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">{config.name}</span>
+                                                    <span className="text-[10px] font-black text-orange-500">{config.price} TRX</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input 
+                                                        type="number" 
+                                                        placeholder="Price"
+                                                        className="p-2 bg-black border border-gray-800 rounded-lg text-xs font-bold"
+                                                        defaultValue={config.price}
+                                                        onChange={(e) => handleUpdateConsumable(key, 'price', e.target.value)}
+                                                    />
+                                                    <input 
+                                                        type="number" 
+                                                        placeholder="Amount"
+                                                        className="p-2 bg-black border border-gray-800 rounded-lg text-xs font-bold"
+                                                        defaultValue={config.amount}
+                                                        onChange={(e) => handleUpdateConsumable(key, 'amount', e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    <button onClick={handleSaveConsumables} className="w-full py-3 bg-orange-500 hover:bg-orange-400 text-black font-black rounded-xl uppercase tracking-widest text-[10px]">Save Consumables</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="lg:col-span-2 bg-[#1a2c38] border border-gray-800 rounded-[2.5rem] overflow-hidden">
+                            <div className="p-6 border-b border-gray-800 bg-black/20">
+                                <h2 className="font-black uppercase tracking-tighter">Shop Inventory</h2>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="text-[10px] font-black text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                                            <th className="px-6 py-4">Item</th>
+                                            <th className="px-6 py-4">Stats</th>
+                                            <th className="px-6 py-4">Price</th>
+                                            <th className="px-6 py-4">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-800/50">
+                                        {shopItems.map(item => (
+                                            <tr key={item._id}>
+                                                <td className="px-6 py-4">
+                                                    <div className="text-sm font-black uppercase tracking-tighter">{item.name}</div>
+                                                    <div className="text-[10px] text-gray-500 font-bold uppercase">{item.key} | {item.type}</div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="text-[10px] font-bold">DMG: {item.damage}</div>
+                                                    <div className="text-[10px] font-bold">RATE: {item.fireRate}ms</div>
+                                                </td>
+                                                <td className="px-6 py-4 font-black text-yellow-500">{item.price} TRX</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => { setEditingItem(item); setShopForm(item); }} className="p-2 hover:bg-white/10 rounded-lg text-blue-500 transition-colors"><Plus className="w-4 h-4 rotate-45" /></button>
+                                                        <button onClick={() => handleDeleteItem(item._id)} className="p-2 hover:bg-white/10 rounded-lg text-red-500 transition-colors"><ShieldAlert className="w-4 h-4" /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 )}
 

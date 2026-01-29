@@ -72,6 +72,34 @@ const Store = () => {
     }
   };
 
+  const handleBuySpins = async (amount) => {
+    setBuying(`spins-${amount}`);
+    setStatus({ type: '', message: '' });
+    try {
+      const res = await shopAPI.buySpins(amount);
+      dispatch(updateWallet(res.data.wallet));
+      setStatus({ type: 'success', message: res.data.message });
+    } catch (err) {
+      setStatus({ type: 'error', message: err.response?.data?.error || 'Purchase failed' });
+    } finally {
+      setBuying(null);
+    }
+  };
+
+  const handleBuyAmmo = async (itemKey) => {
+    setBuying(itemKey);
+    setStatus({ type: '', message: '' });
+    try {
+        const res = await shopAPI.buyAmmo(itemKey);
+        dispatch(updateWallet(res.data.wallet));
+        setStatus({ type: 'success', message: res.data.message });
+    } catch (err) {
+        setStatus({ type: 'error', message: err.response?.data?.error || 'Ammo purchase failed' });
+    } finally {
+        setBuying(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0d1117] text-white pt-12 pb-24">
       <div className="max-w-7xl mx-auto px-4">
@@ -94,6 +122,75 @@ const Store = () => {
                 <div className="bg-black/40 border border-gray-800 p-6 rounded-3xl backdrop-blur-xl min-w-[200px] text-center md:text-right">
                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Available Balance</p>
                     <p className="text-3xl font-black text-[#3bc117]">{wallet.mainBalance.toFixed(2)} TRX</p>
+                </div>
+            </div>
+        </div>
+
+        {/* Spin Credits Section */}
+        <div className="bg-[#1a2c38] border border-gray-800 rounded-[2rem] p-8 mb-12">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Spins */}
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b lg:border-b-0 lg:border-r border-gray-800 pb-8 lg:pb-0 lg:pr-8">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-yellow-500/10 rounded-2xl flex items-center justify-center border border-yellow-500/20">
+                            <Coins className="w-6 h-6 text-yellow-500" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-black uppercase tracking-tighter">Spin <span className="text-yellow-500">Credits</span></h2>
+                            <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">1 TRX = 1 Spin Credit</p>
+                        </div>
+                    </div>
+                    <div className="flex bg-black/40 border border-gray-800 rounded-xl p-1">
+                        {[10, 50, 100].map(amount => (
+                            <button 
+                                key={amount}
+                                onClick={() => handleBuySpins(amount)}
+                                disabled={buying === `spins-${amount}` || wallet.mainBalance < amount}
+                                className="px-4 py-2 hover:bg-white/5 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50"
+                            >
+                                {buying === `spins-${amount}` ? <Loader2 className="w-3 h-3 animate-spin" /> : `${amount} Spins`}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Ammo */}
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center border border-orange-500/20">
+                            <Zap className="w-6 h-6 text-orange-500" />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-black uppercase tracking-tighter">Combat <span className="text-orange-500">Ammo</span></h2>
+                            <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Stock up for GameX Sniper</p>
+                        </div>
+                    </div>
+                    <div className="flex gap-4">
+                        <button 
+                            onClick={() => handleBuyAmmo('arrow')}
+                            disabled={buying === 'arrow' || wallet.mainBalance < 5}
+                            className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-gray-800 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex flex-col items-center gap-1"
+                        >
+                            {buying === 'arrow' ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                                <>
+                                    <span>50x Arrows</span>
+                                    <span className="text-orange-500">5 TRX</span>
+                                </>
+                            )}
+                        </button>
+                        <button 
+                            onClick={() => handleBuyAmmo('pellet')}
+                            disabled={buying === 'pellet' || wallet.mainBalance < 5}
+                            className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-gray-800 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex flex-col items-center gap-1"
+                        >
+                            {buying === 'pellet' ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                                <>
+                                    <span>100x Pellets</span>
+                                    <span className="text-orange-500">5 TRX</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

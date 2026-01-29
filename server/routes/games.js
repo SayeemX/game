@@ -6,6 +6,7 @@ const User = require('../models/User');
 const BirdWeapon = require('../models/BirdWeapon');
 const Transaction = require('../models/Transaction');
 const BirdMatch = require('../models/BirdMatch');
+const Game = require('../models/Game');
 
 // Start Game
 router.post('/bird/start', auth, async (req, res) => {
@@ -42,12 +43,28 @@ router.post('/bird/start', auth, async (req, res) => {
     // Fallback to basic stats if weapon not found (shouldn't happen if seeded correctly)
     const weaponStats = weapon ? weapon.toObject() : { 
         key: 'basic_bow', 
+        type: 'bow',
         damage: 1, 
         accuracy: 0.8, 
         perks: { windResistance: 0.1 } 
     };
 
+    // Ammo Check & Deduction
+    const ammoType = weaponStats.type === 'bow' ? 'arrow' : 'pellet';
+    const ammoItem = user.inventory.items.find(i => i.itemKey === ammoType);
+    const ammoRequired = 20;
+
+    if (!ammoItem || ammoItem.amount < ammoRequired) {
+        return res.status(400).json({ 
+            error: `Insufficient ${ammoType}s. You need ${ammoRequired} to start.`,
+            type: 'AMMO_REQUIRED'
+        });
+    }
+    ammoItem.amount -= ammoRequired;
+    await user.save();
+
     const game = BirdShootingEngine.createGame(user._id, level, weaponStats);
+    game.ammo = ammoRequired;
 
     // Create Match Record
     await BirdMatch.create({
