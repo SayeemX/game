@@ -37,24 +37,16 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://gamex-th2n.onrender.com',
-  process.env.CLIENT_URL,
-  process.env.ADDITIONAL_ORIGINS
+  process.env.CLIENT_URL
 ].filter(Boolean);
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, or same-origin static files)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
+    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some(ao => origin.startsWith(ao))) {
+      callback(null, true);
     } else {
-      // Check if it's a subdomain or variations
-      const isAllowed = allowedOrigins.some(allowed => origin.startsWith(allowed));
-      if (isAllowed) return callback(null, true);
-      
-      console.error(`CORS Blocked: ${origin}`);
-      return callback(new Error('CORS policy violation'), false);
+      console.log('Origin blocked by CORS:', origin);
+      callback(new Error('CORS policy violation'));
     }
   },
   credentials: true

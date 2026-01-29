@@ -1,9 +1,0 @@
-[dotenv@17.2.3] injecting env (4) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
-🚀 Server running on port 3001
-✅ MongoDB Connected
-Auth Error: TypeError: next is not a function
-    at model.<anonymous> (/home/sym/Desktop/game/server/models/User.js:84:3)
-    at Kareem.execPre (/home/sym/Desktop/game/server/node_modules/kareem/index.js:63:39)
-    at async model.$__save (/home/sym/Desktop/game/server/node_modules/mongoose/lib/model.js:369:5)
-    at async model.save (/home/sym/Desktop/game/server/node_modules/mongoose/lib/model.js:609:5)
-    at async /home/sym/Desktop/game/server/routes/auth.js:25:5

@@ -1,3 +1,0 @@
-[dotenv@17.2.3] injecting env (5) from server/.env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
-🚀 Server running on port 10000
-✅ MongoDB Connected

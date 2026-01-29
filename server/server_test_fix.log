@@ -1,4 +1,0 @@
-[dotenv@17.2.3] injecting env (4) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
-🚀 Server running on port 3001
-✅ MongoDB Connected
-next is not a function

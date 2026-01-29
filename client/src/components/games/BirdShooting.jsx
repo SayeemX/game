@@ -124,7 +124,7 @@ class BirdSystem3D {
     
     // Body (ellipsoid)
     const bodyGeometry = new THREE.SphereGeometry(type.size, 16, 16);
-    const bodyMaterial = new THREE.MeshLambertMaterial({ 
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
       color: type.color,
       roughness: 0.8
     });
@@ -134,7 +134,7 @@ class BirdSystem3D {
     
     // Wings (animated)
     const wingGeometry = new THREE.BoxGeometry(type.size * 1.5, type.size * 0.1, type.size * 0.5);
-    const wingMaterial = new THREE.MeshLambertMaterial({ color: type.color });
+    const wingMaterial = new THREE.MeshStandardMaterial({ color: type.color });
     
     const leftWing = new THREE.Mesh(wingGeometry, wingMaterial);
     leftWing.position.set(0, 0, type.size * 0.6);
@@ -512,7 +512,7 @@ class HuntingGame3D {
       groundTex.wrapT = THREE.RepeatWrapping;
       groundTex.repeat.set(50, 50);
       
-      const groundMat = new THREE.MeshStandardMaterial({ map: groundTex });
+      const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
@@ -531,14 +531,14 @@ class HuntingGame3D {
           
           const trunk = new THREE.Mesh(
               new THREE.CylinderGeometry(0.5, 0.8, 3),
-              new THREE.MeshStandardMaterial({ color: 0x8B4513 })
+              new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 })
           );
           trunk.position.set(x, 1.5, z);
           this.scene.add(trunk);
           
           const leaves = new THREE.Mesh(
               new THREE.ConeGeometry(3, 6),
-              new THREE.MeshStandardMaterial({ color: 0x228B22 })
+              new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 })
           );
           leaves.position.set(x, 5, z);
           this.scene.add(leaves);
@@ -591,7 +591,7 @@ class HuntingGame3D {
           
           // Simple alignment to velocity
           const velocity = arrow.body.velocity;
-          if (velocity.lengthSq() > 0.1) {
+          if (velocity.lengthSquared() > 0.1) {
               const direction = new THREE.Vector3(velocity.x, velocity.y, velocity.z).normalize();
               const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
             //   arrow.mesh.quaternion.copy(quaternion); // This is jittery without smoothing, skipping for now

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const BirdWeapon = require('../models/BirdWeapon');
 const Transaction = require('../models/Transaction');
 const Game = require('../models/Game');
 const spinEngine = require('../services/SpinEngine');
