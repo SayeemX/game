@@ -133,8 +133,8 @@ router.post('/buy', auth, async (req, res) => {
 
         res.status(400).json({ error: 'Invalid purchase type' });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
+        console.error('Purchase Error:', err);
+        res.status(500).json({ error: 'Server error: ' + err.message });
     }
 });
 
@@ -157,8 +157,8 @@ router.post('/equip', auth, async (req, res) => {
 
         res.json({ success: true, message: 'Item equipped!', equippedWeapon: itemKey });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
+        console.error('Purchase Error:', err);
+        res.status(500).json({ error: 'Server error: ' + err.message });
     }
 });
 

@@ -71,7 +71,7 @@ router.post('/initialize', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Spin init error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error: ' + error.message });
   }
 });
 
@@ -185,7 +185,7 @@ router.post('/play', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Spin play error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error: ' + error.message });
   }
 });
 
@@ -210,7 +210,7 @@ router.post('/rotate-seed', auth, async (req, res) => {
 
     } catch (error) {
         console.error('Rotate seed error:', error);
-        res.status(500).json({ error: 'Server error' });
+        res.status(500).json({ error: 'Server error: ' + error.message });
     }
 });
 
