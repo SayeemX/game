@@ -11,14 +11,11 @@ router.post('/register', async (req, res) => {
     let user = await User.findOne({ $or: [{ username }, { email }] });
     if (user) return res.status(400).json({ message: 'User already exists' });
 
-    // All new users default to 'user' role
-    const role = 'user';
-
     user = new User({ 
         username, 
         email: email || `${username}@example.com`, 
         password,
-        role,
+        role: 'user',
         wallet: {
             mainBalance: 0,
             bonusBalance: 0,
@@ -29,8 +26,17 @@ router.post('/register', async (req, res) => {
     await user.save();
 
     const payload = { user: { id: user.id } };
+    
+    if (!process.env.JWT_SECRET) {
+        console.error('JWT_SECRET is missing from environment variables');
+        return res.status(500).json({ error: 'Server configuration error' });
+    }
+
     jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' }, (err, token) => {
-      if (err) throw err;
+      if (err) {
+          console.error('JWT Sign Error:', err);
+          return res.status(500).json({ error: 'Token generation failed' });
+      }
       res.json({ token, user: { 
           id: user.id, 
           username: user.username, 
@@ -41,8 +47,8 @@ router.post('/register', async (req, res) => {
       }});
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Registration Error:', err);
+    res.status(500).json({ error: 'Server error: ' + err.message });
   }
 });
 
@@ -57,8 +63,17 @@ router.post('/login', async (req, res) => {
     if (!isMatch) return res.status(400).json({ message: 'Invalid Credentials' });
 
     const payload = { user: { id: user.id } };
+
+    if (!process.env.JWT_SECRET) {
+        console.error('JWT_SECRET is missing from environment variables');
+        return res.status(500).json({ error: 'Server configuration error' });
+    }
+
     jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' }, (err, token) => {
-      if (err) throw err;
+      if (err) {
+          console.error('JWT Sign Error:', err);
+          return res.status(500).json({ error: 'Token generation failed' });
+      }
       res.json({ token, user: { 
           id: user.id, 
           username: user.username, 
@@ -69,8 +84,8 @@ router.post('/login', async (req, res) => {
       }});
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Login Error:', err);
+    res.status(500).json({ error: 'Server error: ' + err.message });
   }
 });
 

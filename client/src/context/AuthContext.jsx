@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
-import api from '../services/api';
+import api, { API_URL } from '../services/api';
 
 export const AuthContext = createContext();
 
@@ -16,9 +16,8 @@ export const AuthProvider = ({ children }) => {
       fetchUser();
 
       // Initialize Socket
-      // Get the base URL from API_URL (remove /api if present)
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const socketUrl = apiUrl ? apiUrl.replace(/\/api$/, '') : window.location.origin;
+      // Derives from services/api.js API_URL
+      const socketUrl = API_URL.replace(/\/api$/, '');
       
       const newSocket = io(socketUrl, {
           auth: { token }

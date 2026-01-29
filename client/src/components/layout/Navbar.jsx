@@ -75,13 +75,13 @@ const Navbar = () => {
             {isAuthenticated ? (
               <div className="flex items-center gap-4">
                 {/* Wallet */}
-                <Link to="/wallet" className="hidden md:flex items-center gap-3 bg-black/40 border border-gray-800 hover:border-yellow-500/50 rounded-2xl p-1.5 pr-4 transition-all">
-                    <div className="w-8 h-8 bg-yellow-500/10 rounded-xl flex items-center justify-center border border-yellow-500/20">
-                        <Plus className="w-4 h-4 text-yellow-500" />
+                <Link to="/wallet" className="flex items-center gap-2 sm:gap-3 bg-black/40 border border-gray-800 hover:border-yellow-500/50 rounded-2xl p-1 sm:p-1.5 pr-2 sm:pr-4 transition-all">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 bg-yellow-500/10 rounded-xl flex items-center justify-center border border-yellow-500/20">
+                        <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-yellow-500" />
                     </div>
                     <div className="flex flex-col">
-                        <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest">Balance</span>
-                        <span className="text-sm font-black text-white">{wallet.mainBalance.toFixed(2)} TRX</span>
+                        <span className="text-[6px] sm:text-[8px] font-black text-gray-500 uppercase tracking-widest">Balance</span>
+                        <span className="text-[10px] sm:text-sm font-black text-white whitespace-nowrap">{wallet.mainBalance.toFixed(2)} TRX</span>
                     </div>
                 </Link>
 

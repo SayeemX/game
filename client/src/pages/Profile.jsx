@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   User, 
   Wallet, 
@@ -11,11 +11,16 @@ import {
   TrendingUp, 
   ArrowUpRight,
   Settings,
-  History
+  History,
+  Gift,
+  Copy,
+  CheckCircle2,
+  Share2
 } from 'lucide-react';
 
 const Profile = () => {
   const { user, wallet, stats } = useSelector(state => state.user);
+  const [copied, setCopied] = useState({ code: false, link: false });
 
   if (!user) {
     return (
@@ -24,6 +29,14 @@ const Profile = () => {
       </div>
     );
   }
+
+  const referralLink = `${window.location.origin}/register?ref=${user.referralCode}`;
+
+  const copyToClipboard = (text, type) => {
+    navigator.clipboard.writeText(text);
+    setCopied({ ...copied, [type]: true });
+    setTimeout(() => setCopied({ ...copied, [type]: false }), 2000);
+  };
 
   const statCards = [
     { label: 'Total Wins', value: stats.totalWins || 0, icon: Trophy, color: 'text-yellow-500' },
@@ -119,10 +132,90 @@ const Profile = () => {
                 <button className="mt-4 text-yellow-500 text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em]">Start playing now</button>
               </div>
             </div>
+
+            {/* Elite Inventory */}
+            <div className="bg-[#1a2c38] border border-gray-800 rounded-[2rem] sm:rounded-[3rem] p-6 sm:p-8">
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-lg sm:text-xl font-black uppercase tracking-tighter flex items-center gap-3">
+                  <ShoppingBag className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" /> Elite Inventory
+                </h2>
+                <Link to="/store" className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all">Buy More</Link>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Ammo Status */}
+                <div className="bg-black/20 border border-gray-800 p-6 rounded-3xl flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <Zap className="w-6 h-6 text-orange-500" />
+                    <div>
+                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Ammunition</p>
+                      <p className="font-black text-white uppercase">{user.inventory?.items?.find(i => i.itemKey === 'arrow')?.amount || 0} Arrows</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-black/20 border border-gray-800 p-6 rounded-3xl flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <Target className="w-6 h-6 text-[#3bc117]" />
+                    <div>
+                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Equipped</p>
+                      <p className="font-black text-white uppercase">{user.inventory?.equippedWeapon?.replace(/_/g, ' ') || 'Basic Bow'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Side Info */}
           <div className="space-y-6 sm:space-y-8">
+            {/* Referral Card */}
+            <div className="bg-[#1a2c38] border border-gray-800 rounded-[2rem] p-8 space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#3bc117]/10 rounded-xl flex items-center justify-center border border-[#3bc117]/20">
+                  <Share2 className="w-5 h-5 text-[#3bc117]" />
+                </div>
+                <h3 className="text-xl font-black uppercase tracking-tighter">Referral Arena</h3>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Your Referral Code</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-black/40 border border-gray-800 rounded-xl px-4 py-3 font-black text-lg tracking-widest text-[#3bc117]">
+                      {user.referralCode}
+                    </div>
+                    <button 
+                      onClick={() => copyToClipboard(user.referralCode, 'code')}
+                      className="p-3 bg-gray-800 hover:bg-gray-700 rounded-xl transition-all"
+                    >
+                      {copied.code ? <CheckCircle2 className="w-5 h-5 text-[#3bc117]" /> : <Copy className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Invitation Link</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-black/40 border border-gray-800 rounded-xl px-4 py-3 font-bold text-xs truncate text-gray-400">
+                      {referralLink}
+                    </div>
+                    <button 
+                      onClick={() => copyToClipboard(referralLink, 'link')}
+                      className="p-3 bg-gray-800 hover:bg-gray-700 rounded-xl transition-all"
+                    >
+                      {copied.link ? <CheckCircle2 className="w-5 h-5 text-[#3bc117]" /> : <Copy className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <p className="text-[10px] font-bold text-gray-500 leading-relaxed uppercase">
+                  Invite your friends and earn <span className="text-yellow-500">10% commission</span> on every win they make in the GameX Arena.
+                </p>
+              </div>
+            </div>
+
             <div className="bg-gradient-to-br from-yellow-500 to-orange-500 rounded-[2rem] sm:rounded-[3rem] p-8 sm:p-10 text-black">
               <Gift className="w-10 h-10 sm:w-12 sm:h-12 mb-4 sm:mb-6" />
               <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tighter mb-4">GameX GIFT Program</h3>

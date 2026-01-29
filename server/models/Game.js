@@ -1,26 +1,38 @@
 const mongoose = require('mongoose');
 
 const gameSchema = new mongoose.Schema({
-  // Spin Game Configuration
+  // Advanced Spin Game Configuration
   spinGame: {
-    prizes: [{
-      id: String,
-      name: String,
-      type: { 
-        type: String, 
-        enum: ['balance', 'bonus', 'spins', 'weapon', 'item', 'crash', 'jackpot'] 
+    tiers: {
+      BRONZE: {
+        cost: { type: Number, default: 1 },
+        segments: { type: Number, default: 24 },
+        prizes: [mongoose.Schema.Types.Mixed]
       },
-      value: Number,
-      probability: Number, // 0-100
-      itemKey: String, // For weapons/items
-      tier: { type: String, enum: ['common', 'rare', 'epic', 'legendary', 'badluck'] },
-      color: String,
-      icon: String
-    }],
-    minBet: { type: Number, default: 1 },
-    maxBet: { type: Number, default: 100 },
-    active: { type: Boolean, default: true },
-    progressiveJackpot: { type: Number, default: 1000 }
+      SILVER: {
+        cost: { type: Number, default: 10 },
+        segments: { type: Number, default: 32 },
+        prizes: [mongoose.Schema.Types.Mixed]
+      },
+      GOLD: {
+        cost: { type: Number, default: 100 },
+        segments: { type: Number, default: 48 },
+        prizes: [mongoose.Schema.Types.Mixed]
+      },
+      DIAMOND: {
+        cost: { type: Number, default: 1000 },
+        segments: { type: Number, default: 64 },
+        prizes: [mongoose.Schema.Types.Mixed]
+      }
+    },
+    jackpots: {
+      MINI: { current: { type: Number, default: 100 }, base: { type: Number, default: 100 } },
+      MINOR: { current: { type: Number, default: 1000 }, base: { type: Number, default: 1000 } },
+      MAJOR: { current: { type: Number, default: 10000 }, base: { type: Number, default: 10000 } },
+      GRAND: { current: { type: Number, default: 100000 }, base: { type: Number, default: 100000 } },
+      MEGA: { current: { type: Number, default: 1000000 }, base: { type: Number, default: 1000000 } }
+    },
+    active: { type: Boolean, default: true }
   },
   
   // Bird Shooting Configuration

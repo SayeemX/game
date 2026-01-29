@@ -153,12 +153,12 @@ const Wallet = () => {
                 {/* Action Panel */}
                 <div className="lg:col-span-2 space-y-6 sm:space-y-8">
                     <div className="bg-[#1a2c38] border border-gray-800 rounded-[2rem] sm:rounded-[3rem] overflow-hidden">
-                        <div className="flex border-b border-gray-800">
-                            {['deposit', 'withdraw', 'recharge'].map(tab => (
+                        <div className="flex border-b border-gray-800 overflow-x-auto no-scrollbar">
+                            {['deposit', 'withdraw', 'recharge', 'inventory'].map(tab => (
                                 <button
                                     key={tab}
                                     onClick={() => { setActiveTab(tab); setStatus({type:'', message:''}); }}
-                                    className={`flex-1 py-4 sm:py-6 text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === tab ? 'bg-yellow-500 text-black' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                                    className={`flex-1 min-w-[100px] py-4 sm:py-6 text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em] transition-all ${activeTab === tab ? 'bg-yellow-500 text-black' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
                                 >
                                     {tab}
                                 </button>
@@ -167,6 +167,74 @@ const Wallet = () => {
 
                         <div className="p-6 sm:p-10">
                             <AnimatePresence mode="wait">
+                                {activeTab === 'inventory' && (
+                                    <motion.div key="inventory" initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-10}}>
+                                        <h3 className="text-xl font-black uppercase tracking-tighter mb-8 flex items-center gap-3">
+                                            <ShoppingBag className="w-6 h-6 text-yellow-500" /> My Arsenal
+                                        </h3>
+                                        
+                                        <div className="space-y-8">
+                                            {/* Consumables (Arrows/Pellets) */}
+                                            <div>
+                                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">Consumables</p>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {(user.inventory?.items || []).length === 0 ? (
+                                                        <p className="text-gray-600 text-xs font-bold uppercase py-4 border-2 border-dashed border-gray-800 rounded-2xl text-center">No ammunition in stock</p>
+                                                    ) : (
+                                                        user.inventory.items.map(item => (
+                                                            <div key={item.itemKey} className="bg-black/20 border border-gray-800 p-6 rounded-3xl flex items-center justify-between">
+                                                                <div className="flex items-center gap-4">
+                                                                    <div className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center border border-orange-500/20">
+                                                                        <Zap className="w-6 h-6 text-orange-500" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="font-black uppercase tracking-widest text-sm">{item.itemKey}</p>
+                                                                        <p className="text-[10px] text-gray-500 font-bold uppercase">Ready for action</p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <p className="text-2xl font-black text-white">{item.amount}</p>
+                                                                    <p className="text-[8px] text-gray-500 font-black uppercase">Units</p>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Weapons */}
+                                            <div>
+                                                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">Weapons</p>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="bg-black/20 border-2 border-[#3bc117]/30 p-6 rounded-3xl flex items-center justify-between relative overflow-hidden">
+                                                        <div className="absolute top-0 right-0 p-2 bg-[#3bc117] text-black text-[8px] font-black uppercase">Active</div>
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-12 h-12 bg-[#3bc117]/10 rounded-2xl flex items-center justify-center border border-[#3bc117]/20">
+                                                                <Target className="w-6 h-6 text-[#3bc117]" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-black uppercase tracking-widest text-sm">{user.inventory?.equippedWeapon?.replace(/_/g, ' ') || 'Basic Bow'}</p>
+                                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Main Weapon</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    {(user.inventory?.weapons || []).length > 0 && (
+                                                        <div className="flex items-center justify-center border-2 border-dashed border-gray-800 rounded-3xl p-6">
+                                                            <p className="text-[10px] text-gray-600 font-black uppercase">+ {user.inventory.weapons.length} more in armory</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="mt-10 pt-8 border-t border-gray-800 flex justify-center">
+                                            <Link to="/store" className="flex items-center gap-2 text-yellow-500 font-black uppercase tracking-widest text-[10px] hover:underline">
+                                                Visit Elite Store to upgrade arsenal <ArrowRight className="w-3 h-3" />
+                                            </Link>
+                                        </div>
+                                    </motion.div>
+                                )}
+
                                 {activeTab === 'deposit' && (
                                     <motion.div key="deposit" initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-10}}>
                                         <h3 className="text-xl font-black uppercase tracking-tighter mb-8 flex items-center gap-3">

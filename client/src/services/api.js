@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://gamex-th2n.onrender.com/api';
+const isProduction = window.location.hostname !== 'localhost';
+export const API_URL = import.meta.env.VITE_API_URL || 
+                (isProduction ? 'https://gamex-th2n.onrender.com/api' : 'http://localhost:3001/api');
 
 const api = axios.create({
   baseURL: API_URL,

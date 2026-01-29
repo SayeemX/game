@@ -37,12 +37,14 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'https://gamex-th2n.onrender.com',
+  'https://sayeemx.github.io',
+  'https://SayeemX.github.io',
   process.env.CLIENT_URL
 ].filter(Boolean);
 
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some(ao => origin.startsWith(ao))) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.github.io')) {
       callback(null, true);
     } else {
       console.log('Origin blocked by CORS:', origin);
