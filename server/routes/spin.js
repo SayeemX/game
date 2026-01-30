@@ -83,7 +83,8 @@ router.post('/initialize', auth, async (req, res) => {
       nonce: user.provablyFair.nonce,
       serverSeedHash: spinEngine.sha256(user.provablyFair.serverSeed),
       tiers: gameConfig.spinGame.tiers,
-      jackpots: gameConfig.spinGame.jackpots
+      jackpots: gameConfig.spinGame.jackpots,
+      wallet: user.wallet
     });
 
   } catch (error) {
@@ -216,10 +217,7 @@ router.post('/play', auth, async (req, res) => {
       success: true,
       prize: winningPrize,
       result: { hash: rawHash, nonce, clientSeed: currentClientSeed },
-      wallet: {
-        balance: user.wallet.mainBalance,
-        spins: user.wallet.spinCredits
-      },
+      wallet: user.wallet,
       jackpots: gameConfig.spinGame.jackpots
     });
 

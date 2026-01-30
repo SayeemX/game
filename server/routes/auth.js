@@ -19,7 +19,12 @@ router.post('/register', async (req, res) => {
         wallet: {
             mainBalance: 0,
             bonusBalance: 0,
-            spinCredits: 5 
+            spinCredits: {
+                BRONZE: 5,
+                SILVER: 0,
+                GOLD: 0,
+                DIAMOND: 0
+            }
         }
     });
     

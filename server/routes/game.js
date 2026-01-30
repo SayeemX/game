@@ -20,9 +20,9 @@ const PRIZES = [
 // @desc    Advanced Provably Fair Spin
 router.post('/spin', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.user.id);
+    const user = await User.findById(req.user.id);
 
-    if (user.wallet.spinCredits < 1) {
+    if (user.wallet.spinCredits.BRONZE < 1) {
       return res.status(400).json({ msg: 'Insufficient Spin Credits' });
     }
 
@@ -35,7 +35,7 @@ router.post('/spin', auth, async (req, res) => {
     const prize = RNGService.selectPrize(PRIZES, decimal);
 
     // 3. Atomically update User and Record Transaction
-    user.wallet.spinCredits -= 1;
+    user.wallet.spinCredits.BRONZE -= 1;
     
     if (prize.type === 'BALANCE') {
       user.wallet.mainBalance += prize.value;
@@ -86,10 +86,10 @@ router.post('/redeem', auth, async (req, res) => {
       return res.status(404).json({ msg: 'Invalid or Expired Code' });
     }
 
-    const user = await User.findById(req.user.user.id);
+    const user = await User.findById(req.user.id);
     
     if (redeemCode.rewardType === 'SPIN_CREDIT') {
-      user.wallet.spinCredits += redeemCode.rewardValue;
+      user.wallet.spinCredits.BRONZE += redeemCode.rewardValue;
     } else {
       user.wallet.mainBalance += redeemCode.rewardValue;
     }

@@ -65,7 +65,7 @@ const GameRoom = () => {
       {/* Dashboard Header */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
         <StatCard icon={<Wallet className="text-yellow-400"/>} label="Main Balance" value={`${user?.wallet?.mainBalance || 0} COINS`} color="border-yellow-500/20" />
-        <StatCard icon={<Trophy className="text-game-accent"/>} label="Spin Credits" value={user?.wallet?.spinCredits || 0} color="border-game-accent/20" />
+        <StatCard icon={<Trophy className="text-game-accent"/>} label="Spin Credits" value={typeof user?.wallet?.spinCredits === 'object' ? user.wallet.spinCredits.BRONZE : (user?.wallet?.spinCredits || 0)} color="border-game-accent/20" />
         <StatCard icon={<History className="text-game-secondary"/>} label="Items Won" value={user?.inventory?.length || 0} color="border-game-secondary/20" />
       </div>
 
