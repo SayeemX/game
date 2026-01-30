@@ -16,7 +16,8 @@ import {
   ArrowRight,
   ShieldCheck,
   CreditCard,
-  QrCode
+  QrCode,
+  ShoppingBag
 } from 'lucide-react';
 import { paymentAPI } from '../services/api';
 import { updateWallet } from '../redux/slices/userSlice';

@@ -54,7 +54,10 @@ router.post('/initialize', auth, async (req, res) => {
     if (needsSave) await user.save();
 
     let gameConfig = await Game.findOne();
-    if (!gameConfig || !gameConfig.spinGame || !gameConfig.spinGame.tiers) {
+    const hasTiers = gameConfig?.spinGame?.tiers && 
+                     Object.keys(WHEEL_TIERS).every(t => gameConfig.spinGame.tiers[t] && gameConfig.spinGame.tiers[t].prizes?.length > 0);
+
+    if (!gameConfig || !gameConfig.spinGame || !hasTiers) {
         const tiers = {};
         Object.keys(WHEEL_TIERS).forEach(tier => {
             tiers[tier] = {
@@ -63,7 +66,15 @@ router.post('/initialize', auth, async (req, res) => {
             };
         });
         
-        gameConfig = await Game.findOneAndUpdate({}, { $set: { "spinGame.tiers": tiers } }, { upsert: true, new: true });
+        const jackpots = {
+            MINI: { current: 100, base: 100 },
+            MINOR: { current: 1000, base: 1000 },
+            MAJOR: { current: 10000, base: 10000 },
+            GRAND: { current: 100000, base: 100000 },
+            MEGA: { current: 1000000, base: 1000000 }
+        };
+
+        gameConfig = await Game.findOneAndUpdate({}, { $set: { "spinGame.tiers": tiers, "spinGame.jackpots": jackpots } }, { upsert: true, new: true });
     }
 
     res.json({
@@ -97,6 +108,16 @@ router.post('/play', auth, async (req, res) => {
       return res.status(400).json({ error: 'Insufficient balance' });
     }
 
+    // Ensure provablyFair is initialized
+    if (!user.provablyFair || !user.provablyFair.serverSeed) {
+        user.provablyFair = {
+            serverSeed: spinEngine.generateSeed(64),
+            clientSeed: spinEngine.generateSeed(10),
+            nonce: 0
+        };
+        await user.save();
+    }
+
     // Update Seed if provided
     if (clientSeed && clientSeed !== user.provablyFair.clientSeed) {
         user.provablyFair.clientSeed = clientSeed;
@@ -104,7 +125,15 @@ router.post('/play', auth, async (req, res) => {
     }
 
     let gameConfig = await Game.findOne();
+    if (!gameConfig || !gameConfig.spinGame.jackpots) {
+        // Force re-init if config is broken
+        return res.status(500).json({ error: 'Game configuration not initialized. Please refresh.' });
+    }
+
     const tierData = gameConfig.spinGame.tiers[tier];
+    if (!tierData || !tierData.prizes || tierData.prizes.length === 0) {
+        return res.status(500).json({ error: 'Tier configuration missing or empty. Please contact support.' });
+    }
     const prizes = tierData.prizes;
 
     // Spin Calculation
@@ -114,6 +143,10 @@ router.post('/play', auth, async (req, res) => {
     
     const rawHash = spinEngine.generateHash(serverSeed, currentClientSeed, nonce);
     let winningPrize = spinEngine.calculateWinningPrize(prizes, rawHash);
+
+    if (!winningPrize) {
+        return res.status(500).json({ error: 'No prize found for this spin. Please contact support.' });
+    }
 
     // Jackpot Contributions (1% of bet)
     const contribution = cost * 0.01;
@@ -202,6 +235,45 @@ router.post('/rotate-seed', auth, async (req, res) => {
         user.provablyFair.nonce = 0;
         await user.save();
         res.json({ success: true, previousServerSeed: oldSeed, newServerSeedHash: spinEngine.sha256(user.provablyFair.serverSeed) });
+    } catch (error) {
+        res.status(500).json({ error: 'Server error: ' + error.message });
+    }
+});
+
+// Update Client Seed
+router.post('/update-client-seed', auth, async (req, res) => {
+    try {
+        const { clientSeed } = req.body;
+        if (!clientSeed) return res.status(400).json({ error: 'Client seed is required' });
+        
+        const user = await User.findById(req.user.id);
+        user.provablyFair.clientSeed = clientSeed;
+        user.provablyFair.nonce = 0;
+        await user.save();
+        
+        res.json({ success: true, clientSeed: user.provablyFair.clientSeed });
+    } catch (error) {
+        res.status(500).json({ error: 'Server error: ' + error.message });
+    }
+});
+
+// Verify Result
+router.post('/verify', async (req, res) => {
+    try {
+        const { serverSeed, clientSeed, nonce, tier = 'BRONZE' } = req.body;
+        if (!serverSeed || !clientSeed || nonce === undefined) {
+            return res.status(400).json({ error: 'Missing parameters' });
+        }
+
+        const gameConfig = await Game.findOne();
+        const tierData = gameConfig.spinGame.tiers[tier];
+        if (!tierData) return res.status(400).json({ error: 'Invalid tier' });
+
+        const hash = spinEngine.generateHash(serverSeed, clientSeed, nonce);
+        const decimal = parseInt(hash.substring(0, 8), 16) / 0xffffffff;
+        const prize = spinEngine.calculateWinningPrize(tierData.prizes, hash);
+
+        res.json({ success: true, hash, decimal, prize });
     } catch (error) {
         res.status(500).json({ error: 'Server error: ' + error.message });
     }

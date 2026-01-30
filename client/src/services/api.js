@@ -47,7 +47,7 @@ export const authAPI = {
 
 export const spinAPI = {
   initialize: () => api.post('/spin/initialize'),
-  play: (bet) => api.post('/spin/play', { bet }),
+  play: (tier) => api.post('/spin/play', { tier }),
   verify: (hash) => api.get(`/spin/verify/${hash}`),
   updateClientSeed: (clientSeed) => api.post('/spin/update-client-seed', { clientSeed }),
   rotateSeed: () => api.post('/spin/rotate-seed'),

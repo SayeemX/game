@@ -24,22 +24,31 @@ class SpinEngine {
 
   // Calculate winning prize based on weighted probability
   calculateWinningPrize(prizes, hash) {
+    if (!prizes || !Array.isArray(prizes) || prizes.length === 0) return null;
+
+    // Filter out any null/undefined entries just in case
+    const validPrizes = prizes.filter(p => p && typeof p === 'object');
+    if (validPrizes.length === 0) return null;
+
     // Use first 8 chars (32 bits) of hash for precision
     const decimal = parseInt(hash.substring(0, 8), 16) / 0xffffffff;
     
-    // Sort prizes by weight/probability if not already
     let cumulative = 0;
-    const totalProb = prizes.reduce((acc, p) => acc + (p.probability || p.weight || 0), 0);
+    const totalProb = validPrizes.reduce((acc, p) => acc + (p.probability || p.weight || 0), 0);
     
+    if (totalProb <= 0) return validPrizes[0];
+
     const target = decimal * totalProb;
 
-    for (const prize of prizes) {
+    for (const prize of validPrizes) {
         cumulative += (prize.probability || prize.weight || 0);
         if (target <= cumulative) {
             return prize;
         }
     }
-    return prizes[0]; // Fallback
+    
+    // Safety Fallback: Return the first non-jackpot prize or just the first prize
+    return validPrizes.find(p => p.type !== 'jackpot') || validPrizes[0];
   }
 
   sha256(data) {

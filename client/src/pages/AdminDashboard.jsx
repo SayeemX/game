@@ -233,10 +233,10 @@ const AdminDashboard = () => {
             <div className="space-y-8">
                 {activeTab === 'overview' && stats && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <StatCard label="Total Users" value={stats.totalUsers} icon={Users} color="text-blue-500" />
-                        <StatCard label="Total Economy" value={`${stats.totalBalance.toFixed(2)} TRX`} icon={DollarSign} color="text-green-500" />
-                        <StatCard label="Bonus Pool" value={`${stats.totalBonus.toFixed(2)} TRX`} icon={Gift} color="text-purple-500" />
-                        <StatCard label="Transactions" value={stats.totalTransactions} icon={TrendingUp} color="text-yellow-500" />
+                        <StatCard label="Total Users" value={stats.totalUsers || 0} icon={Users} color="text-blue-500" />
+                        <StatCard label="Total Economy" value={`${(stats.totalBalance || 0).toFixed(2)} TRX`} icon={DollarSign} color="text-green-500" />
+                        <StatCard label="Bonus Pool" value={`${(stats.totalBonus || 0).toFixed(2)} TRX`} icon={Gift} color="text-purple-500" />
+                        <StatCard label="Transactions" value={stats.totalTransactions || 0} icon={TrendingUp} color="text-yellow-500" />
                     </div>
                 )}
 

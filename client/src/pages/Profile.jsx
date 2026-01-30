@@ -15,7 +15,8 @@ import {
   Gift,
   Copy,
   CheckCircle2,
-  Share2
+  Share2,
+  ShoppingBag
 } from 'lucide-react';
 
 const Profile = () => {

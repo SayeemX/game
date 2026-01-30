@@ -14,8 +14,9 @@ router.get('/stats', auth, admin, async (req, res) => {
         const totalUsers = await User.countDocuments();
         const users = await User.find();
         const totalBalance = users.reduce((acc, user) => acc + (user.wallet.mainBalance || 0), 0);
+        const totalBonus = users.reduce((acc, user) => acc + (user.wallet.bonusBalance || 0), 0);
         const totalTransactions = await Transaction.countDocuments();
-        res.json({ totalUsers, totalBalance, totalTransactions });
+        res.json({ totalUsers, totalBalance, totalBonus, totalTransactions });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
