@@ -1,18 +1,10 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const walletSchema = new mongoose.Schema({
-  mainBalance: { type: Number, default: 0, min: 0 },
-  bonusBalance: { type: Number, default: 0, min: 0 },
-  spinCredits: {
-    BRONZE: { type: Number, default: 0, min: 0 },
-    SILVER: { type: Number, default: 0, min: 0 },
-    GOLD: { type: Number, default: 0, min: 0 },
-    DIAMOND: { type: Number, default: 0, min: 0 }
-  },
-  totalWon: { type: Number, default: 0 },
-  totalSpent: { type: Number, default: 0 }
-}, { _id: false });
+// Force clear the model if it exists to ensure schema updates are applied
+if (mongoose.models.User) {
+  delete mongoose.models.User;
+}
 
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true, trim: true },
@@ -20,7 +12,18 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   phone: String,
   
-  wallet: { type: walletSchema, default: () => ({}) },
+  wallet: {
+    mainBalance: { type: Number, default: 0, min: 0 },
+    bonusBalance: { type: Number, default: 0, min: 0 },
+    spinCredits: {
+      BRONZE: { type: Number, default: 0 },
+      SILVER: { type: Number, default: 0 },
+      GOLD: { type: Number, default: 0 },
+      DIAMOND: { type: Number, default: 0 }
+    },
+    totalWon: { type: Number, default: 0 },
+    totalSpent: { type: Number, default: 0 }
+  },
   
   inventory: {
     weapons: [{
@@ -39,7 +42,7 @@ const userSchema = new mongoose.Schema({
     totalSpins: { type: Number, default: 0 },
     totalWins: { type: Number, default: 0 },
     biggestWin: { type: Number, default: 0 },
-    favoriteGame: String,
+    favoriteGame: { type: String, default: 'spin' },
     lastPlayed: Date
   },
 
@@ -98,5 +101,4 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Check if model exists before defining
-module.exports = mongoose.models.User || mongoose.model('User', userSchema);
+module.exports = mongoose.model('User', userSchema);

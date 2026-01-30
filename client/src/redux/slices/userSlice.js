@@ -91,11 +91,10 @@ const userSlice = createSlice({
       } else if (type === 'bonusBalance') {
         state.wallet.bonusBalance += amount;
       } else if (type === 'spinCredits') {
-        if (typeof state.wallet.spinCredits === 'object') {
-          state.wallet.spinCredits[tier] += amount;
-        } else {
-          state.wallet.spinCredits += amount;
+        if (typeof state.wallet.spinCredits !== 'object') {
+          state.wallet.spinCredits = { BRONZE: state.wallet.spinCredits || 0, SILVER: 0, GOLD: 0, DIAMOND: 0 };
         }
+        state.wallet.spinCredits[tier] += amount;
       } else {
           state.wallet.mainBalance += (action.payload.amount || action.payload);
       }
