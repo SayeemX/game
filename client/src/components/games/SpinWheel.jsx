@@ -32,6 +32,13 @@ const WHEEL_CONFIGS = {
   DIAMOND: { label: 'Diamond', color: '#b9f2ff', icon: Gem, cost: 1000 }
 };
 
+const WHEEL_TIERS = {
+    BRONZE: { cost: 1 },
+    SILVER: { cost: 10 },
+    GOLD: { cost: 100 },
+    DIAMOND: { cost: 1000 }
+};
+
 const SpinWheel = () => {
   const dispatch = useDispatch();
   const { wallet, isAuthenticated } = useSelector(state => state.user);
@@ -208,8 +215,8 @@ const SpinWheel = () => {
     if (isSpinning) return;
     
     const cost = WHEEL_CONFIGS[currentTier].cost;
-    // Special case for Bronze (can use spinCredits)
-    const canSpin = (cost === 1 && (wallet.spinCredits >= 1 || wallet.mainBalance >= 1)) || (wallet.mainBalance >= cost);
+    const availableCredits = typeof wallet.spinCredits === 'object' ? (wallet.spinCredits[currentTier] || 0) : wallet.spinCredits;
+    const canSpin = availableCredits >= 1 || wallet.mainBalance >= cost;
     
     if (!canSpin) {
         setShowBuyModal(true);
@@ -297,7 +304,7 @@ const SpinWheel = () => {
   const handleBuySpins = async (amount) => {
     setBuying(true);
     try {
-      const res = await shopAPI.buySpins(amount);
+      const res = await shopAPI.buySpins(amount, currentTier);
       dispatch(updateWallet(res.data.wallet));
       setShowBuyModal(false);
       playSound('win');
@@ -375,9 +382,11 @@ const SpinWheel = () => {
                 <div className="bg-[#1a2c38] border border-gray-800 p-6 rounded-[2rem]">
                     <div className="flex items-center gap-3 mb-2">
                         <RotateCw className="w-4 h-4 text-yellow-500" />
-                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Available Spins</p>
+                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Available {currentTier} Spins</p>
                     </div>
-                    <p className="text-2xl font-black text-white">{wallet.spinCredits}</p>
+                    <p className="text-2xl font-black text-white">
+                        {typeof wallet.spinCredits === 'object' ? (wallet.spinCredits[currentTier] || 0) : wallet.spinCredits}
+                    </p>
                 </div>
                 <div className="flex gap-2">
                     <button onClick={() => setAudioEnabled(!audioEnabled)} className={`flex-1 py-4 rounded-2xl transition-all flex items-center justify-center ${audioEnabled ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' : 'bg-gray-800 text-gray-500 border border-gray-700'}`}>
@@ -447,17 +456,20 @@ const SpinWheel = () => {
                                     <div className="w-16 h-16 bg-yellow-500/10 rounded-2xl flex items-center justify-center mx-auto border border-yellow-500/20">
                                         <ShoppingBag className="w-8 h-8 text-yellow-500" />
                                     </div>
-                                    <h2 className="text-3xl font-black uppercase italic tracking-tighter">Refill <span className="text-yellow-500">Spins</span></h2>
+                                    <h2 className="text-3xl font-black uppercase italic tracking-tighter">Refill <span className="text-yellow-500">{currentTier} Spins</span></h2>
                                     <div className="space-y-3">
-                                        {[10, 50, 100].map(amt => (
-                                            <button key={amt} onClick={() => handleBuySpins(amt)} disabled={buying || wallet.mainBalance < amt} className="w-full flex items-center justify-between p-5 bg-black/20 border border-gray-800 rounded-2xl hover:border-yellow-500/50 transition-all disabled:opacity-50">
-                                                <div className="flex items-center gap-3">
-                                                    <RotateCw className="w-4 h-4 text-gray-500" />
-                                                    <span className="font-black uppercase tracking-widest text-xs">{amt} SPINS</span>
-                                                </div>
-                                                <span className="text-yellow-500 font-black">{amt} TRX</span>
-                                            </button>
-                                        ))}
+                                        {[10, 50, 100].map(amt => {
+                                            const totalCost = amt * WHEEL_TIERS[currentTier].cost;
+                                            return (
+                                                <button key={amt} onClick={() => handleBuySpins(amt)} disabled={buying || wallet.mainBalance < totalCost} className="w-full flex items-center justify-between p-5 bg-black/20 border border-gray-800 rounded-2xl hover:border-yellow-500/50 transition-all disabled:opacity-50">
+                                                    <div className="flex items-center gap-3">
+                                                        <RotateCw className="w-4 h-4 text-gray-500" />
+                                                        <span className="font-black uppercase tracking-widest text-xs">{amt} SPINS</span>
+                                                    </div>
+                                                    <span className="text-yellow-500 font-black">{totalCost} TRX</span>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                     <button onClick={() => setShowBuyModal(false)} className="text-gray-500 font-black uppercase text-[10px] tracking-[0.2em] hover:text-white transition-colors">Maybe Later</button>
                                 </div>

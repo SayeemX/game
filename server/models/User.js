@@ -12,7 +12,12 @@ const userSchema = new mongoose.Schema({
   wallet: {
     mainBalance: { type: Number, default: 0, min: 0 }, // Values in TRX
     bonusBalance: { type: Number, default: 0, min: 0 }, // Values in TRX
-    spinCredits: { type: Number, default: 0, min: 0 },
+    spinCredits: {
+      BRONZE: { type: Number, default: 0, min: 0 },
+      SILVER: { type: Number, default: 0, min: 0 },
+      GOLD: { type: Number, default: 0, min: 0 },
+      DIAMOND: { type: Number, default: 0, min: 0 }
+    },
     totalWon: { type: Number, default: 0 },
     totalSpent: { type: Number, default: 0 }
   },

@@ -164,17 +164,27 @@ router.post('/equip', auth, async (req, res) => {
 });
 
 // @route   POST api/shop/buy-spins
-// @desc    Purchase spin credits
+// @desc    Purchase spin credits for a specific tier
 router.post('/buy-spins', auth, async (req, res) => {
-    const { amount } = req.body; // Amount of spins to buy
-    const SPIN_PRICE = 1; // 1 TRX per spin (example price)
+    const { amount, tier = 'BRONZE' } = req.body; 
     
+    const WHEEL_TIERS = {
+        BRONZE: { cost: 1 },
+        SILVER: { cost: 10 },
+        GOLD: { cost: 100 },
+        DIAMOND: { cost: 1000 }
+    };
+
     try {
         if (!amount || amount <= 0) {
             return res.status(400).json({ error: 'Invalid amount' });
         }
 
-        const cost = amount * SPIN_PRICE;
+        if (!WHEEL_TIERS[tier]) {
+            return res.status(400).json({ error: 'Invalid wheel tier' });
+        }
+
+        const cost = amount * WHEEL_TIERS[tier].cost;
         const user = await User.findById(req.user.id);
 
         if (user.wallet.mainBalance < cost) {
@@ -182,7 +192,11 @@ router.post('/buy-spins', auth, async (req, res) => {
         }
 
         user.wallet.mainBalance -= cost;
-        user.wallet.spinCredits += amount;
+        
+        // Ensure spinCredits object exists and has the tier
+        if (!user.wallet.spinCredits) user.wallet.spinCredits = {};
+        user.wallet.spinCredits[tier] = (user.wallet.spinCredits[tier] || 0) + amount;
+        
         user.wallet.totalSpent += cost;
 
         await Transaction.create({
@@ -190,14 +204,14 @@ router.post('/buy-spins', auth, async (req, res) => {
             type: 'purchase',
             amount: cost,
             currency: 'TRX',
-            description: `Purchased ${amount} spin credits`,
+            description: `Purchased ${amount} ${tier} spin credits`,
             status: 'completed'
         });
 
         await user.save();
         res.json({ 
             success: true, 
-            message: `Successfully purchased ${amount} spins!`, 
+            message: `Successfully purchased ${amount} ${tier} spins!`, 
             wallet: user.wallet 
         });
     } catch (err) {

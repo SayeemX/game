@@ -50,7 +50,12 @@ const userSlice = createSlice({
     wallet: {
       mainBalance: 0,
       bonusBalance: 0,
-      spinCredits: 0,
+      spinCredits: {
+        BRONZE: 0,
+        SILVER: 0,
+        GOLD: 0,
+        DIAMOND: 0
+      },
       totalWon: 0,
       totalSpent: 0
     },
@@ -69,21 +74,29 @@ const userSlice = createSlice({
       state.wallet = {
         mainBalance: 0,
         bonusBalance: 0,
-        spinCredits: 0,
+        spinCredits: {
+          BRONZE: 0,
+          SILVER: 0,
+          GOLD: 0,
+          DIAMOND: 0
+        },
         totalWon: 0,
         totalSpent: 0
       };
     },
     updateBalance: (state, action) => {
-      const { type, amount } = action.payload;
+      const { type, amount, tier = 'BRONZE' } = action.payload;
       if (type === 'mainBalance') {
         state.wallet.mainBalance += amount;
       } else if (type === 'bonusBalance') {
         state.wallet.bonusBalance += amount;
       } else if (type === 'spinCredits') {
-        state.wallet.spinCredits += amount;
+        if (typeof state.wallet.spinCredits === 'object') {
+          state.wallet.spinCredits[tier] += amount;
+        } else {
+          state.wallet.spinCredits += amount;
+        }
       } else {
-          // default to mainBalance if only amount is passed
           state.wallet.mainBalance += (action.payload.amount || action.payload);
       }
     },

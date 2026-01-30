@@ -80,7 +80,7 @@ export const shopAPI = {
   buyItem: (itemId) => api.post('/shop/buy', { itemId }),
   buyAmmo: (itemKey) => api.post('/shop/buy', { itemKey, type: 'ammo' }),
   equipItem: (itemKey) => api.post('/shop/equip', { itemKey }),
-  buySpins: (amount) => api.post('/shop/buy-spins', { amount })
+  buySpins: (amount, tier) => api.post('/shop/buy-spins', { amount, tier })
 };
 
 export const adminAPI = {

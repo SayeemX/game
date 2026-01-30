@@ -102,10 +102,12 @@ router.post('/play', auth, async (req, res) => {
     const wheelConfig = WHEEL_TIERS[tier];
     if (!wheelConfig) return res.status(400).json({ error: 'Invalid wheel tier' });
 
-    // Cost logic (can use mainBalance or spinCredits if cost is 1)
+    // Cost logic: Use specific tier's spinCredits if available, else use mainBalance
     const cost = wheelConfig.cost;
-    if (user.wallet.mainBalance < cost && (cost > 1 || user.wallet.spinCredits < 1)) {
-      return res.status(400).json({ error: 'Insufficient balance' });
+    const availableCredits = user.wallet.spinCredits[tier] || 0;
+    
+    if (availableCredits < 1 && user.wallet.mainBalance < cost) {
+      return res.status(400).json({ error: `Insufficient ${tier} credits or balance` });
     }
 
     // Ensure provablyFair is initialized
@@ -164,8 +166,8 @@ router.post('/play', auth, async (req, res) => {
     await gameConfig.save();
 
     // Deduct cost
-    if (cost === 1 && user.wallet.spinCredits >= 1) {
-        user.wallet.spinCredits -= 1;
+    if (user.wallet.spinCredits[tier] >= 1) {
+        user.wallet.spinCredits[tier] -= 1;
     } else {
         user.wallet.mainBalance -= cost;
     }
@@ -180,7 +182,8 @@ router.post('/play', auth, async (req, res) => {
                 user.wallet.mainBalance += winningPrize.value;
                 break;
             case 'spins':
-                user.wallet.spinCredits += winningPrize.value;
+                // Prize spins are currently awarded to the playing tier
+                user.wallet.spinCredits[tier] += winningPrize.value;
                 break;
             case 'weapon':
                 const weapon = await BirdWeapon.findOne({ key: winningPrize.itemKey });
