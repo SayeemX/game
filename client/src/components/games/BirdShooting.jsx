@@ -352,10 +352,39 @@ class BowSystem3D {
       const spawnPos = new THREE.Vector3();
       this.game.camera.getWorldPosition(spawnPos);
       
+      // 1. Create Visual Arrow
       const flyingArrow = new Arrow(spawnPos, direction, this.drawPower);
-      flyingArrow.shoot(this.drawPower, direction);
       this.game.scene.add(flyingArrow.mesh);
       this.game.scene.add(flyingArrow.trail);
+
+      // 2. Create Physics Body
+      const arrowBody = new CANNON.Body({
+          mass: 0.2,
+          position: new CANNON.Vec3(spawnPos.x, spawnPos.y, spawnPos.z),
+          shape: new CANNON.Sphere(0.05), // Sharp tip collision
+          linearDamping: 0.01,
+          allowSleep: false
+      });
+
+      // 3. Launch
+      const baseSpeed = 85; 
+      const launchVelocity = direction.multiplyScalar(baseSpeed * this.drawPower);
+      arrowBody.velocity.set(launchVelocity.x, launchVelocity.y, launchVelocity.z);
+      
+      // 4. Hit Registration Logic
+      arrowBody.addEventListener('collide', (event) => {
+          // Stop arrow on impact with non-bird objects (ground/trees)
+          if (flyingArrow.isActive) {
+              flyingArrow.isActive = false;
+              arrowBody.velocity.set(0, 0, 0);
+              arrowBody.angularVelocity.set(0, 0, 0);
+              arrowBody.mass = 0;
+              arrowBody.updateMassProperties();
+          }
+      });
+
+      this.game.world.addBody(arrowBody);
+      flyingArrow.body = arrowBody;
       this.arrows.push(flyingArrow);
       
       if (this.game.onShoot) {
@@ -365,7 +394,7 @@ class BowSystem3D {
       this.game.camera.fov = 75;
       this.game.camera.updateProjectionMatrix();
 
-      // Reset
+      // Reset Bow
       if (this.loadedArrow) {
           this.bow.remove(this.loadedArrow.mesh);
           this.loadedArrow = null;
@@ -472,18 +501,21 @@ class HuntingGame3D {
 
   initPhysics() {
       this.world = new CANNON.World();
-      this.world.gravity.set(0, -9.82, 0);
+      this.world.gravity.set(0, -15.0, 0); 
+      this.world.broadphase = new CANNON.NaiveBroadphase();
+      this.world.solver.iterations = 10;
+      this.world.defaultContactMaterial.friction = 0.5;
   }
 
   initEnvironment() {
       // Ground
-      const groundGeo = new THREE.PlaneGeometry(500, 500);
+      const groundGeo = new THREE.PlaneGeometry(1000, 1000);
       const textureLoader = new THREE.TextureLoader();
       const groundTex = textureLoader.load('/assets/environment/ground.png');
       groundTex.wrapS = THREE.RepeatWrapping;
       groundTex.wrapT = THREE.RepeatWrapping;
-      groundTex.repeat.set(50, 50);
-      groundTex.colorSpace = THREE.SRGBColorSpace; // Standard color mapping
+      groundTex.repeat.set(100, 100);
+      groundTex.colorSpace = THREE.SRGBColorSpace; 
       
       const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -567,34 +599,51 @@ class HuntingGame3D {
           arrow.update(deltaTime);
           
           if (!arrow.isActive) {
-              this.scene.remove(arrow.mesh);
-              if (arrow.trail) this.scene.remove(arrow.trail);
-              arrows.splice(i, 1);
+              // Stay in world for 5 seconds then disappear
+              if (!arrow.dieTime) arrow.dyingTime = Date.now();
+              if (Date.now() - arrow.dyingTime > 5000) {
+                  this.scene.remove(arrow.mesh);
+                  if (arrow.trail) this.scene.remove(arrow.trail);
+                  this.world.removeBody(arrow.body);
+                  arrows.splice(i, 1);
+              }
               continue;
           }
 
           // Collision Check
           this.birdSystem.birds.forEach(bird => {
-              if (bird.active) {
+              if (bird.active && !bird.isDying) {
                   const dist = arrow.mesh.position.distanceTo(bird.mesh.position);
                   if (dist < bird.type.size + 0.5) {
                       // HIT!
-                      bird.active = false;
-                      this.scene.remove(bird.mesh);
+                      bird.isDying = true;
+                      bird.deathVelocity = arrow.body.velocity.clone().scale(0.1);
                       this.onScore(bird.type.points);
                       
-                      this.audio.play('hit');
                       this.haptics.trigger('hit');
                       this.birdSystem.createFeatherExplosion(bird.mesh.position);
 
-                      // Remove arrow
+                      // Arrow sticks into bird
                       arrow.isActive = false;
-                      this.scene.remove(arrow.mesh);
-                      this.scene.remove(arrow.trail);
+                      this.world.removeBody(arrow.body);
+                      bird.mesh.add(arrow.mesh);
+                      arrow.mesh.position.set(0,0,0);
                   }
               }
           });
       }
+
+      // Special death animation update for birds
+      this.birdSystem.birds.forEach(bird => {
+          if (bird.isDying) {
+              bird.mesh.position.y -= deltaTime * 15; // Fall
+              bird.mesh.rotation.x += deltaTime * 10; // Spin
+              if (bird.mesh.position.y < -1) {
+                  bird.active = false;
+                  this.scene.remove(bird.mesh);
+              }
+          }
+      });
 
       this.renderer.render(this.scene, this.camera);
   }
@@ -802,20 +851,39 @@ const BirdShooting = () => {
                     </div>
                 </div>
 
-                {/* Charge Bar */}
-                {drawPower > 0 && (
-                    <div className="flex-1 max-w-xs px-8">
-                        <div className="bg-black/40 h-4 w-full rounded-full border border-white/10 overflow-hidden backdrop-blur-sm">
-                            <motion.div 
-                                className="h-full bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${drawPower * 100}%` }}
-                                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                            />
-                        </div>
-                        <p className="text-[8px] font-black text-white/50 text-center uppercase tracking-[0.3em] mt-2">Power: {Math.round(drawPower * 100)}%</p>
-                    </div>
-                )}
+                {/* Vertical Charge Meter (Left) */}
+                <AnimatePresence>
+                    {drawPower > 0 && (
+                        <motion.div 
+                            initial={{ opacity: 0, x: -50 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -50 }}
+                            className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
+                        >
+                            <div className="h-80 w-6 bg-black/60 rounded-full border-2 border-white/20 p-1.5 relative overflow-hidden backdrop-blur-md">
+                                <motion.div 
+                                    className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-red-600 via-yellow-500 to-green-400 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+                                    initial={{ height: 0 }}
+                                    animate={{ height: `${drawPower * 100}%` }}
+                                    transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+                                />
+                                {drawPower > 0.9 && (
+                                    <motion.div 
+                                        animate={{ opacity: [0.2, 0.8, 0.2] }}
+                                        transition={{ repeat: Infinity, duration: 0.4 }}
+                                        className="absolute inset-0 bg-white"
+                                    />
+                                )}
+                            </div>
+                            <div className="text-center">
+                                <p className="text-[10px] font-black text-white uppercase tracking-widest">Tension</p>
+                                <p className={`text-2xl font-black italic tracking-tighter ${drawPower > 0.9 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                                    {Math.round(drawPower * 100)}%
+                                </p>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
                 
                 <button 
                     onClick={() => setGameState('lobby')}

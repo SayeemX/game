@@ -214,9 +214,8 @@ const SpinWheel = () => {
   const spin = async () => {
     if (isSpinning) return;
     
-    const cost = WHEEL_CONFIGS[currentTier].cost;
     const availableCredits = typeof wallet.spinCredits === 'object' ? (wallet.spinCredits[currentTier] || 0) : wallet.spinCredits;
-    const canSpin = availableCredits >= 1 || wallet.mainBalance >= cost;
+    const canSpin = availableCredits >= 1;
     
     if (!canSpin) {
         setShowBuyModal(true);
@@ -459,7 +458,7 @@ const SpinWheel = () => {
                                     <h2 className="text-3xl font-black uppercase italic tracking-tighter">Refill <span className="text-yellow-500">{currentTier} Spins</span></h2>
                                     <div className="space-y-3">
                                         {[10, 50, 100].map(amt => {
-                                            const tierCost = WHEEL_TIERS[currentTier]?.cost || 1;
+                                            const tierCost = tiersData[currentTier]?.cost || WHEEL_CONFIGS[currentTier].cost;
                                             const totalCost = amt * tierCost;
                                             return (
                                                 <button key={amt} onClick={() => handleBuySpins(amt)} disabled={buying || wallet.mainBalance < totalCost} className="w-full flex items-center justify-between p-5 bg-black/20 border border-gray-800 rounded-2xl hover:border-yellow-500/50 transition-all disabled:opacity-50 group">
