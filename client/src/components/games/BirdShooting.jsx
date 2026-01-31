@@ -128,6 +128,8 @@ class BirdSystem3D {
         new THREE.MeshStandardMaterial({ color: config.color, roughness: 0.8 })
     );
     body.scale.set(1, 0.6, 1.2);
+    body.castShadow = true;
+    body.receiveShadow = true;
     birdGroup.add(body);
     
     // Wings
@@ -431,6 +433,9 @@ class BowSystem3D {
          const movementY = e.movementY || 0;
          this.game.camera.rotation.y -= movementX * 0.002;
          this.game.camera.rotation.x -= movementY * 0.002;
+         
+         // Clamp Pitch
+         this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.4, this.game.camera.rotation.x));
          this.game.camera.rotation.order = 'YXZ';
       }
   }
@@ -443,15 +448,6 @@ class BowSystem3D {
   }
 
   update(deltaTime) {
-      // Keyboard Aiming
-      if (this.isScoped || this.isDrawn) {
-          const aimSpeed = 1.5 * deltaTime;
-          if (this.keys['KeyW'] || this.keys['ArrowUp']) this.game.camera.rotation.x += aimSpeed;
-          if (this.keys['KeyS'] || this.keys['ArrowDown']) this.game.camera.rotation.x -= aimSpeed;
-          if (this.keys['KeyA'] || this.keys['ArrowLeft']) this.game.camera.rotation.y += aimSpeed;
-          if (this.keys['KeyD'] || this.keys['ArrowRight']) this.game.camera.rotation.y -= aimSpeed;
-      }
-
       if (this.isDrawn) {
           const elapsed = Date.now() - this.drawStartTime;
           this.drawPower = Math.min(elapsed / this.maxDrawTime, 1);
@@ -581,6 +577,7 @@ class HuntingGame3D {
     this.onShoot = onShoot;
     this.activeArrows = [];
     this.particles = [];
+    this.aimVector = new THREE.Vector2(0, 0); // For smooth joystick aiming
     
     this.initThree();
     this.initPhysics();
@@ -614,7 +611,7 @@ class HuntingGame3D {
     const height = this.container.clientHeight;
     
     this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    this.camera.position.set(0, 1.7, 10); // Start position
+    this.camera.position.set(0, 1.7, 0); // Correct Hunter Eye Level
     this.camera.rotation.order = 'YXZ';
     
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -643,13 +640,20 @@ class HuntingGame3D {
   initEnvironment() {
       const textureLoader = new THREE.TextureLoader();
       
-      // Sky Background
-      const skyTex = textureLoader.load('/assets/environment/sky_day.png', (tex) => {
-          this.scene.background = tex;
-      }, undefined, (err) => {
-          console.warn("Sky texture failed to load, using color fallback");
-          this.scene.background = new THREE.Color(0x87CEEB);
+      // 360 Degree Looping Background (Skydome)
+      const bgTex = textureLoader.load('/assets/environment/game background.png', (tex) => {
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.repeat.set(5, 1); // Loop the background 5 times for a full 360 view
+          tex.colorSpace = THREE.SRGBColorSpace;
       });
+      const skyGeo = new THREE.SphereGeometry(800, 32, 32);
+      const skyMat = new THREE.MeshBasicMaterial({ 
+          map: bgTex, 
+          side: THREE.BackSide,
+          fog: false 
+      });
+      const skydome = new THREE.Mesh(skyGeo, skyMat);
+      this.scene.add(skydome);
 
       // Ground
       const groundGeo = new THREE.PlaneGeometry(2000, 2000);
@@ -668,6 +672,7 @@ class HuntingGame3D {
       });
       const ground = new THREE.Mesh(groundGeo, groundMat);
       ground.rotation.x = -Math.PI / 2;
+      ground.position.y = 0;
       ground.receiveShadow = true;
       this.scene.add(ground);
       
@@ -717,6 +722,25 @@ class HuntingGame3D {
       // Physics step
       this.world.step(1/60);
       
+      // --- Centralized Aiming System (Smooth & Clamped) ---
+      const aimSpeed = 2.0 * deltaTime; 
+      
+      // 1. Keyboard Aiming (WASD / Arrows)
+      if (this.bowSystem.keys['KeyW'] || this.bowSystem.keys['ArrowUp']) this.camera.rotation.x += aimSpeed;
+      if (this.bowSystem.keys['KeyS'] || this.bowSystem.keys['ArrowDown']) this.camera.rotation.x -= aimSpeed;
+      if (this.bowSystem.keys['KeyA'] || this.bowSystem.keys['ArrowLeft']) this.camera.rotation.y += aimSpeed;
+      if (this.bowSystem.keys['KeyD'] || this.bowSystem.keys['ArrowRight']) this.camera.rotation.y -= aimSpeed;
+
+      // 2. Joystick Aiming (Velocity-based for smoothness)
+      if (this.aimVector.lengthSq() > 0.001) {
+          this.camera.rotation.y -= this.aimVector.x * aimSpeed * 2.5;
+          this.camera.rotation.x += this.aimVector.y * aimSpeed * 2.5;
+      }
+
+      // 3. Mandatory Pitch Clamping (Prevents Inversion)
+      this.camera.rotation.x = Math.max(-1.45, Math.min(1.45, this.camera.rotation.x));
+      this.camera.rotation.order = 'YXZ'; // Essential for FPS rotation logic
+
       // Update Systems
       this.bowSystem.update(deltaTime);
       this.birdSystem.updateFlock(deltaTime);
@@ -1027,11 +1051,8 @@ const BirdShooting = () => {
   };
 
   const handleJoystickMove = (delta) => {
-      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
-          const sensitivity = 0.05;
-          gameInstanceRef.current.camera.rotation.y -= delta.x * sensitivity;
-          gameInstanceRef.current.camera.rotation.x += delta.y * sensitivity;
-          gameInstanceRef.current.camera.rotation.order = 'YXZ';
+      if (gameInstanceRef.current) {
+          gameInstanceRef.current.aimVector.set(delta.x, delta.y);
       }
   };
 

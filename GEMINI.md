@@ -42,23 +42,24 @@ Like the world's leading gaming platforms, GameX utilizes a cryptographically se
     - Connect to the `SpinEngine.js` for server-side HMAC calculation.
     - Add "GameX GIFT" bonus segments for legendary rewards.
 2. **Bird Shooting (GameX Sniper):**
-    - **Physics-Based Projectiles:** Arrows are now discrete `CANNON.Body` objects with mass, gravity, and ballistic trajectory logic.
+    - **Physics-Based Projectiles:** Arrows are discrete `CANNON.Body` objects with mass and ballistic trajectory.
     - **Realistic Archery Experience:**
-        - **Dynamic Bowstring:** Visual string deformation that follows the arrow's nock during pull-back.
-        - **Ballistic Rotation:** Arrows automatically rotate during flight to align with their velocity vector.
-        - **Charge Mechanics:** Vertical HUD meter with spring animations and "Max Tension" glow effects.
-        - **First-Person Immersion:** Added hunter "Arms" to the bow system that realistically draw back when the string is pulled.
+        - **Dynamic Bowstring:** Visual string deformation following the arrow's nock.
+        - **Ballistic Rotation:** Arrows automatically rotate during flight to align with velocity.
+        - **Charge Mechanics:** Vertical HUD meter with spring animations and "Max Tension" pulse.
+        - **First-Person Immersion:** Hunter "Arms" that realistically draw back when the string is pulled.
+    - **Advanced Navigation & Controls:**
+        - **360° Field of View:** Unrestricted horizontal rotation for full arena awareness.
+        - **Pitch Clamping:** Hard limits on vertical rotation (-80° to +80°) to prevent camera inversion/upside-down flips.
+        - **Analog Smoothing:** Joystick input now controls **rotation velocity** instead of absolute offset, providing buttery-smooth movement across all devices.
     - **Hunting Simulation:**
-        - **Impact Dynamics:** Arrows stick into birds or ground upon collision.
-        - **Death Animations:** Birds realistically fall with gravity and rotation when hit.
-        - **Environmental Fidelity:** High-performance ground rendering and dynamic sky backgrounds.
-        - **Motivational Feedback:** 
-            - **Floating Rewards:** On every successful hit, a high-contrast "+Points" indicator floats up from the impact point using canvas-based 3D sprites.
-            - **Enhanced Impact:** Re-tuned feather explosions with randomized velocity and upward lift for a satisfying "crunchy" hit feel.
+        - **Impact Dynamics:** Arrows stick into targets or environment.
+        - **Death Animations:** Birds fall realistically with gravity and spin when hit.
+        - **Environmental Fidelity:** High-performance tiled ground with anisotropy and dynamic sky backgrounds.
     - **Session & Economy:**
-        - **Session Tracking:** Real-time monitoring of session duration via WebSockets.
-        - **Usage Fees:** Automated deduction of credits every 3 minutes of active play.
-        - **Ammo Persistence:** Intelligent inventory management that returns unused projectiles upon match exit.
+        - **Session Tracking:** WebSocket-driven duration monitoring.
+        - **Usage Fees:** Automated deduction of credits every 3 minutes.
+        - **Ammo Persistence:** Unused projectiles are returned to inventory upon match exit.
 
 ### **Phase 3: Wallet & Reward Ecosystem**
 1.  **Unified Wallet:** Create a central state for Main Balance, Bonus Balance, and GameX Credits.
@@ -110,6 +111,8 @@ Fix9: Fixed keyboard shortcut bug where Space bar could start a draw but not tra
 Fix10: Implemented persistent ammo return logic to ensure unused arrows are restored to user inventory upon match finalization.
 Fix11: Stabilized ground texture rendering by increasing repeat count and enabling anisotropy for better visual depth.
 Fix12: Synchronized hit-registration visual feedback by implementing floating text sprites and re-tuned particle lift.
+Fix13: Resolved favicon 404 error on GitHub Pages by creating a custom favicon.svg and updating the link in index.html to use a relative path.
+Fix14: Fixed camera inversion bug by implementing vertical pitch clamping and centralized rotation velocity logic.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
@@ -120,3 +123,4 @@ Fix12: Synchronized hit-registration visual feedback by implementing floating te
 - **Hunter Arms**: Visual first-person arms that draw back realistically during the charging phase.
 - **HD Environment**: Implemented high-resolution sky and tiled grass ground for real-time gaming look.
 - **Reward Animations**: Dynamic 3D floating point indicators and enhanced feather particles on every successful hunt.
+- **Pro Navigation**: Full 360° horizontal rotation with mandatory vertical pitch clamping and analog-style joystick smoothing.
