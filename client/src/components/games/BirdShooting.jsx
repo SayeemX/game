@@ -766,7 +766,7 @@ class HuntingGame3D {
       const basename = window.location.hostname.includes('github.io') ? '/game' : '';
       
       // 360 Degree Looping Background (Skydome)
-      const bgTex = textureLoader.load(`${basename}/assets/environment/game background.png`, (tex) => {
+      const bgTex = textureLoader.load(`${basename}/assets/environment/background.png`, (tex) => {
           tex.wrapS = THREE.RepeatWrapping;
           tex.repeat.set(5, 1); 
           tex.colorSpace = THREE.SRGBColorSpace;
