@@ -50,12 +50,14 @@ Like the world's leading gaming platforms, GameX utilizes a cryptographically se
         - **First-Person Immersion:** Hunter "Arms" that realistically draw back when the string is pulled.
     - **Advanced Navigation & Controls:**
         - **360° Field of View:** Unrestricted horizontal rotation for full arena awareness.
-        - **Pitch Clamping:** Hard limits on vertical rotation (-80° to +80°) to prevent camera inversion/upside-down flips.
-        - **Analog Smoothing:** Joystick input now controls **rotation velocity** instead of absolute offset, providing buttery-smooth movement across all devices.
+        - **Pitch Clamping:** Hard limits on vertical rotation (-80° to +80°) to prevent camera inversion.
+        - **Analog Smoothing:** Joystick input controls rotation velocity for buttery-smooth movement.
     - **Hunting Simulation:**
         - **Impact Dynamics:** Arrows stick into targets or environment.
         - **Death Animations:** Birds fall realistically with gravity and spin when hit.
-        - **Environmental Fidelity:** High-performance tiled ground with anisotropy and dynamic sky backgrounds.
+        - **Environmental Fidelity:** 
+            - **Dynamic Stage Themes:** Implemented a multi-theme environment system that swaps sky, ground, and fog assets based on game level (Meadows, Hills, Night, Rainbow).
+            - **Tiled Ground:** Optimized 2000-unit terrain with 200x repetition and anisotropy.
     - **Session & Economy:**
         - **Session Tracking:** WebSocket-driven duration monitoring.
         - **Usage Fees:** Automated deduction of credits every 3 minutes.
@@ -113,6 +115,7 @@ Fix11: Stabilized ground texture rendering by increasing repeat count and enabli
 Fix12: Synchronized hit-registration visual feedback by implementing floating text sprites and re-tuned particle lift.
 Fix13: Resolved favicon 404 error on GitHub Pages by creating a custom favicon.svg and updating the link in index.html to use a relative path.
 Fix14: Fixed camera inversion bug by implementing vertical pitch clamping and centralized rotation velocity logic.
+Fix15: Resolved asset loading 404s on Render/GitHub subpaths by implementing a dynamic basename resolver for Three.js loaders.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
@@ -124,3 +127,4 @@ Fix14: Fixed camera inversion bug by implementing vertical pitch clamping and ce
 - **HD Environment**: Implemented high-resolution sky and tiled grass ground for real-time gaming look.
 - **Reward Animations**: Dynamic 3D floating point indicators and enhanced feather particles on every successful hunt.
 - **Pro Navigation**: Full 360° horizontal rotation with mandatory vertical pitch clamping and analog-style joystick smoothing.
+- **Dynamic Stage Themes**: Level-based environmental swapping (Meadows, Hills, Night, Rainbow) using localized asset mapping.
