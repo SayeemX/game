@@ -116,8 +116,66 @@ io.use(async (socket, next) => {
     }
 });
 
+// Track active sessions for charging
+const activeSessions = new Map(); // userId -> { startTime, lastChargeTime, socketId }
+
+const SESSION_CHARGE_AMOUNT = 2; // Credits to deduct
+const SESSION_CHARGE_INTERVAL = 3 * 60 * 1000; // 3 minutes
+
+const chargeUserSession = async (userId, io) => {
+    try {
+        const user = await User.findById(userId);
+        if (!user) return;
+
+        if (user.wallet.mainBalance < SESSION_CHARGE_AMOUNT) {
+            // Insufficient balance, notify and potentially end session
+            io.to(activeSessions.get(userId)?.socketId).emit('error', { 
+                message: 'Insufficient balance for session. Please refill.',
+                type: 'SESSION_EXPIRED'
+            });
+            return false;
+        }
+
+        user.wallet.mainBalance -= SESSION_CHARGE_AMOUNT;
+        await user.save();
+
+        await Transaction.create({
+            userId: user._id,
+            type: 'game_bet',
+            amount: SESSION_CHARGE_AMOUNT,
+            currency: 'TRX',
+            description: `Bird Shooting Session Charge (3 min)`,
+            status: 'completed'
+        });
+
+        io.to(activeSessions.get(userId)?.socketId).emit('balance_update', { mainBalance: user.wallet.mainBalance });
+        return true;
+    } catch (err) {
+        console.error('Session charge error:', err);
+        return false;
+    }
+};
+
 io.on('connection', (socket) => {
     console.log(`📡 Socket Connected: ${socket.user?.username}`);
+
+    // Register user session
+    if (socket.user?.id) {
+        activeSessions.set(socket.user.id, { 
+            startTime: Date.now(), 
+            lastChargeTime: Date.now(),
+            socketId: socket.id,
+            timer: setInterval(async () => {
+                const session = activeSessions.get(socket.user.id);
+                if (session) {
+                    const success = await chargeUserSession(socket.user.id, io);
+                    if (success) {
+                        session.lastChargeTime = Date.now();
+                    }
+                }
+            }, SESSION_CHARGE_INTERVAL)
+        });
+    }
 
     socket.on('bird_shoot:join', async (data) => {
         try {
@@ -145,7 +203,7 @@ io.on('connection', (socket) => {
             // Ammo Check & Deduction
             const ammoType = weaponStats.type === 'bow' ? 'arrow' : 'pellet';
             if (!user.inventory.items) user.inventory.items = [];
-            const ammoItem = user.inventory.items.find(i => i.itemKey === ammoType);
+            let ammoItem = user.inventory.items.find(i => i.itemKey === ammoType);
             const ammoRequired = 20;
 
             if (!ammoItem || ammoItem.amount < ammoRequired) {
@@ -158,6 +216,7 @@ io.on('connection', (socket) => {
 
             const game = birdShootingEngine.createGame(socket.user.id, level, weaponStats);
             game.ammo = ammoRequired;
+            game.ammoType = ammoType; // Store type to return it correctly
 
             await user.save();
             await BirdMatch.create({
@@ -181,22 +240,36 @@ io.on('connection', (socket) => {
 
     socket.on('bird_shoot:shoot', (data) => {
         if (!data?.gameId) return;
-        const result = birdShootingEngine.validateShot(data.gameId, data.shotData);
-        socket.emit('bird_shoot:shot_result', result);
+        const game = birdShootingEngine.activeGames.get(data.gameId);
+        if (game && game.ammo > 0) {
+            game.ammo--;
+            const result = birdShootingEngine.validateShot(data.gameId, data.shotData);
+            socket.emit('bird_shoot:shot_result', { ...result, remainingAmmo: game.ammo });
+        } else {
+            socket.emit('error', { message: 'Out of ammo!' });
+        }
     });
 
-    socket.on('bird_shoot:end', async (data) => {
-        if (!data?.gameId) return;
-        const game = birdShootingEngine.endGame(data.gameId);
+    const finalizeMatch = async (gameId, userId) => {
+        const game = birdShootingEngine.endGame(gameId);
         if (game) {
             try {
                 const reward = Math.floor(game.score / 5); 
-                const user = await User.findById(socket.user.id);
+                const user = await User.findById(userId);
                 
+                // Return unused ammo
+                if (game.ammo > 0 && game.ammoType) {
+                    const ammoItem = user.inventory.items.find(i => i.itemKey === game.ammoType);
+                    if (ammoItem) {
+                        ammoItem.amount += game.ammo;
+                    } else {
+                        user.inventory.items.push({ itemKey: game.ammoType, amount: game.ammo });
+                    }
+                }
+
                 if (reward > 0) {
                     user.wallet.mainBalance += reward;
                     user.wallet.totalWon += reward;
-                    await user.save();
                     
                     await Transaction.create({
                         userId: user._id,
@@ -208,8 +281,10 @@ io.on('connection', (socket) => {
                     });
                 }
 
+                await user.save();
+
                 await BirdMatch.findOneAndUpdate(
-                    { matchId: data.gameId },
+                    { matchId: gameId },
                     { 
                         score: game.score, 
                         reward, 
@@ -218,19 +293,35 @@ io.on('connection', (socket) => {
                     }
                 );
                 
-                socket.emit('bird_shoot:game_over', {
-                    ...game,
-                    reward,
-                    newBalance: user.wallet.mainBalance
-                });
+                return { game, reward, newBalance: user.wallet.mainBalance };
             } catch (err) {
                 console.error('Finalization error:', err);
             }
         }
+        return null;
+    };
+
+    socket.on('bird_shoot:end', async (data) => {
+        if (!data?.gameId) return;
+        const result = await finalizeMatch(data.gameId, socket.user.id);
+        if (result) {
+            socket.emit('bird_shoot:game_over', {
+                ...result.game,
+                reward: result.reward,
+                newBalance: result.newBalance
+            });
+        }
     });
 
     socket.on('disconnect', () => {
-        console.log(`🔌 Socket Disconnected: ${socket.id}`);
+        console.log(`🔌 Socket Disconnected: ${socket.user?.username}`);
+        if (socket.user?.id) {
+            const session = activeSessions.get(socket.user.id);
+            if (session) {
+                clearInterval(session.timer);
+                activeSessions.delete(socket.user.id);
+            }
+        }
     });
 });
 

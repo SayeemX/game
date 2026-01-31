@@ -44,6 +44,8 @@ class BirdShootingEngine {
       maxCombo: 0,
       shots: 0,
       hits: 0,
+      ammo: 0, 
+      ammoType: '', // Store ammo type
       birds: this.generateBirds(level, seed),
       status: 'active',
       startTime: Date.now(),

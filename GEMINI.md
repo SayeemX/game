@@ -45,12 +45,16 @@ Like the world's leading gaming platforms, GameX utilizes a cryptographically se
     - **Physics-Based Projectiles:** Arrows are now discrete `CANNON.Body` objects with mass, gravity, and ballistic trajectory logic.
     - **Realistic Archery Experience:**
         - **Dynamic Bowstring:** Visual string deformation that follows the arrow's nock during pull-back.
-        - **Ballistic Rotation:** Arrows automatically rotate during flight to align with their velocity vector (pointing where they fly).
+        - **Ballistic Rotation:** Arrows automatically rotate during flight to align with their velocity vector.
         - **Charge Mechanics:** Vertical HUD meter with spring animations and "Max Tension" glow effects.
     - **Hunting Simulation:**
         - **Impact Dynamics:** Arrows stick into birds or ground upon collision.
-        - **Death Animations:** Birds no longer disappear; they enter a "dying" state, falling realistically with gravity and rotation.
+        - **Death Animations:** Birds no longer disappear; they enter a "dying" state, falling realistically with gravity.
         - **Feather Explosions:** Sprite-based particle systems triggered on successful hits.
+    - **Session & Economy:**
+        - **Session Tracking:** Real-time monitoring of session duration via WebSockets.
+        - **Usage Fees:** Automated deduction of credits every 3 minutes of active play to maintain arena access.
+        - **Ammo Persistence:** Intelligent inventory management that returns unused projectiles to the user's permanent inventory upon match exit or completion.
 
 ### **Phase 3: Wallet & Reward Ecosystem**
 1.  **Unified Wallet:** Create a central state for Main Balance, Bonus Balance, and GameX Credits.
@@ -97,3 +101,13 @@ Fix4: Fixed `AdminDashboard.jsx` crash (TypeError on .map) by adding support for
 Fix5: Resolved `TypeError: next is not a function` in `User.js` by removing the redundant `next` callback from the `async` pre-save hook.
 Fix6: Fixed arrow rotation logic in `Arrow.js` to ensure the tip always points in the direction of travel during parabolic flight.
 Fix7: Corrected bird death logic to prevent hit-registration on birds that are already in the "dying" falling state.
+Fix8: Resolved arrow cleanup bug where a typo prevented arrows from being removed from the scene.
+Fix9: Fixed keyboard shortcut bug where Space bar could start a draw but not transition to aiming.
+Fix10: Implemented persistent ammo return logic to ensure unused arrows are restored to user inventory upon match finalization.
+
+### **Recent Features Added:**
+- **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
+- **Desktop Controls**: Full keyboard support (Space to Draw/Shoot, ESC to Cancel).
+- **Physics V2**: Improved ballistic rotation and bird impact dynamics.
+- **Session Billing**: Real-time websocket-based credit deduction every 3 minutes of play.
+- **Inventory Persistence**: Automated projectile recovery for unused ammo across game sessions.

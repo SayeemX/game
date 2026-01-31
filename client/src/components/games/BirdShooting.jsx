@@ -273,7 +273,8 @@ class BowSystem3D {
   }
 
   updateBowString(drawAmount = 0) {
-    const positions = this.stringGeometry.attributes.position.array;
+    if (!this.bowString || !this.bowString.geometry) return;
+    const positions = this.bowString.geometry.attributes.position.array;
     const pullDistance = drawAmount * 0.3;
     positions[3] = -pullDistance; 
     positions[4] = 0.1 - (pullDistance * 0.3); 
@@ -282,12 +283,74 @@ class BowSystem3D {
 
   setupInputs() {
     const element = this.game.container;
-    element.addEventListener('mousedown', (e) => {
+    
+    // Mouse listeners
+    this._onMouseDown = (e) => {
         if (e.target.closest('button')) return;
         this.handleMouseDown(e);
-    });
-    element.addEventListener('mouseup', this.handleMouseUp.bind(this));
-    window.addEventListener('mousemove', this.handleMouseMove.bind(this));
+    };
+    this._onMouseUp = (e) => this.handleMouseUp(e);
+    this._onMouseMove = (e) => this.handleMouseMove(e);
+
+    element.addEventListener('mousedown', this._onMouseDown);
+    element.addEventListener('mouseup', this._onMouseUp);
+    window.addEventListener('mousemove', this._onMouseMove);
+
+    // Keyboard Listener
+    this._onKeyDown = (e) => {
+        if (e.repeat) return;
+        if (e.code === 'Space') {
+            e.preventDefault();
+            if (!this.isScoped && !this.isDrawn) {
+                this.handleMouseDown(e);
+            } else if (this.isScoped) {
+                this.shoot();
+            }
+        }
+        if (e.code === 'Escape') {
+            if (this.isDrawn || this.isScoped) {
+                this.cancel();
+            }
+        }
+    };
+
+    this._onKeyUp = (e) => {
+        if (e.code === 'Space') {
+            if (this.isDrawn && !this.isScoped) {
+                this.handleMouseUp(e);
+            }
+        }
+    };
+
+    window.addEventListener('keydown', this._onKeyDown);
+    window.addEventListener('keyup', this._onKeyUp);
+  }
+
+  destroy() {
+      const element = this.game.container;
+      element.removeEventListener('mousedown', this._onMouseDown);
+      element.removeEventListener('mouseup', this._onMouseUp);
+      window.removeEventListener('mousemove', this._onMouseMove);
+      window.removeEventListener('keydown', this._onKeyDown);
+      window.removeEventListener('keyup', this._onKeyUp);
+  }
+  cancel() {
+      this.isDrawn = false;
+      this.isScoped = false;
+      this.drawPower = 0;
+      
+      // Reset Camera
+      this.game.camera.fov = 75;
+      this.game.camera.updateProjectionMatrix();
+
+      // Remove Visual Arrow
+      if (this.loadedArrow) {
+          this.bow.remove(this.loadedArrow.mesh);
+          this.loadedArrow = null;
+      }
+      this.updateBowString(0);
+      
+      if (this.game.onScopeExit) this.game.onScopeExit();
   }
 
   handleMouseDown(e) {
@@ -600,7 +663,7 @@ class HuntingGame3D {
           
           if (!arrow.isActive) {
               // Stay in world for 5 seconds then disappear
-              if (!arrow.dieTime) arrow.dyingTime = Date.now();
+              if (!arrow.dyingTime) arrow.dyingTime = Date.now();
               if (Date.now() - arrow.dyingTime > 5000) {
                   this.scene.remove(arrow.mesh);
                   if (arrow.trail) this.scene.remove(arrow.trail);
@@ -651,6 +714,7 @@ class HuntingGame3D {
   dispose() {
       cancelAnimationFrame(this.requestID);
       this.resizeObserver.disconnect();
+      this.bowSystem.destroy();
       this.renderer.dispose();
       this.container.innerHTML = '';
   }
@@ -668,6 +732,10 @@ const BirdShooting = () => {
   const [loading, setLoading] = useState(false);
   const [showScopeUI, setShowScopeUI] = useState(false);
   const [drawPower, setDrawPower] = useState(0);
+  const [sessionTime, setSessionTime] = useState(0);
+  const [remainingAmmo, setRemainingAmmo] = useState(0);
+  const [isNocked, setIsNocked] = useState(false);
+  const [zoomMultiplier, setZoomMultiplier] = useState(1);
   const [error, setError] = useState(null);
 
   const gameContainerRef = useRef(null);
@@ -682,12 +750,16 @@ const BirdShooting = () => {
 
     const handleSession = (data) => {
         setMatchData(data);
+        setRemainingAmmo(data.ammo);
         setGameState('playing');
+        setSessionTime(0);
         setLoading(false);
     };
 
     const handleShotResult = (res) => {
-        // Validation from server
+        if (res.remainingAmmo !== undefined) {
+            setRemainingAmmo(res.remainingAmmo);
+        }
     };
 
     const handleGameOver = (data) => {
@@ -749,6 +821,8 @@ const BirdShooting = () => {
               setDrawPower(0);
           };
           gameInstanceRef.current.onDrawUpdate = (power) => setDrawPower(power);
+          gameInstanceRef.current.onNock = (nocked) => setIsNocked(nocked);
+          gameInstanceRef.current.onZoomChange = (z) => setZoomMultiplier(z);
 
           return () => {
               if (gameInstanceRef.current) {
@@ -756,6 +830,16 @@ const BirdShooting = () => {
               }
           };
       }
+  }, [gameState]);
+
+  useEffect(() => {
+      let interval;
+      if (gameState === 'playing') {
+          interval = setInterval(() => {
+              setSessionTime(prev => prev + 1);
+          }, 1000);
+      }
+      return () => clearInterval(interval);
   }, [gameState]);
 
   useEffect(() => {
@@ -798,6 +882,39 @@ const BirdShooting = () => {
           }, 100);
       }
   };
+
+  const handleCancel = () => {
+      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
+          gameInstanceRef.current.bowSystem.cancel();
+      }
+  };
+
+  const handleLoad = () => {
+      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
+          gameInstanceRef.current.bowSystem.nock();
+      }
+  };
+
+  const handleSetZoom = (index) => {
+      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
+          gameInstanceRef.current.bowSystem.setZoom(index);
+      }
+  };
+
+  // Component Keyboard shortcuts
+  useEffect(() => {
+      const handleGlobalKeyDown = (e) => {
+          if (gameState !== 'playing') return;
+          if (e.code === 'Space') {
+              // Logic is handled in class, but we can sync React state if needed
+          }
+          if (e.code === 'Escape') {
+              handleCancel();
+          }
+      };
+      window.addEventListener('keydown', handleGlobalKeyDown);
+      return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [gameState]);
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-white p-4 font-sans select-none">
@@ -846,51 +963,57 @@ const BirdShooting = () => {
                         <p className="text-4xl font-black text-[#3bc117]">{currentScore}</p>
                     </div>
                     <div className="bg-black/50 backdrop-blur-md p-4 rounded-2xl border border-white/10">
-                        <p className="text-[10px] text-gray-400 font-bold uppercase">Time</p>
-                        <p className={`text-4xl font-black ${timeLeft < 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{timeLeft}s</p>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase">Ammo</p>
+                        <p className="text-4xl font-black text-white">{remainingAmmo}</p>
+                    </div>
+                    <div className="bg-black/50 backdrop-blur-md p-4 rounded-2xl border border-white/10">
+                        <p className="text-[10px] text-gray-400 font-bold uppercase">Zoom</p>
+                        <p className="text-2xl font-black text-yellow-500">{zoomMultiplier}x</p>
+                    </div>
+                    <div className="bg-black/50 backdrop-blur-md p-4 rounded-2xl border border-white/10">
+                        <p className="text-[10px] text-gray-400 font-bold uppercase">Session</p>
+                        <p className="text-2xl font-black text-white">
+                            {Math.floor(sessionTime / 60)}:{(sessionTime % 60).toString().padStart(2, '0')}
+                        </p>
                     </div>
                 </div>
 
-                {/* Vertical Charge Meter (Left) */}
-                <AnimatePresence>
-                    {drawPower > 0 && (
-                        <motion.div 
-                            initial={{ opacity: 0, x: -50 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -50 }}
-                            className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
-                        >
-                            <div className="h-80 w-6 bg-black/60 rounded-full border-2 border-white/20 p-1.5 relative overflow-hidden backdrop-blur-md">
-                                <motion.div 
-                                    className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-red-600 via-yellow-500 to-green-400 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
-                                    initial={{ height: 0 }}
-                                    animate={{ height: `${drawPower * 100}%` }}
-                                    transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-                                />
-                                {drawPower > 0.9 && (
-                                    <motion.div 
-                                        animate={{ opacity: [0.2, 0.8, 0.2] }}
-                                        transition={{ repeat: Infinity, duration: 0.4 }}
-                                        className="absolute inset-0 bg-white"
-                                    />
-                                )}
-                            </div>
-                            <div className="text-center">
-                                <p className="text-[10px] font-black text-white uppercase tracking-widest">Tension</p>
-                                <p className={`text-2xl font-black italic tracking-tighter ${drawPower > 0.9 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                                    {Math.round(drawPower * 100)}%
-                                </p>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-                
-                <button 
-                    onClick={() => setGameState('lobby')}
-                    className="bg-red-500/20 hover:bg-red-500/40 text-red-500 p-3 rounded-xl border border-red-500/30 pointer-events-auto backdrop-blur-md"
-                >
-                    EXIT
-                </button>
+                <div className="flex gap-2 pointer-events-auto">
+                    {/* Zoom Indicators */}
+                    <div className="flex bg-black/50 backdrop-blur-md p-2 rounded-xl border border-white/10 gap-1">
+                        {[1, 2, 3, 4, 10].map((z, i) => (
+                            <button 
+                                key={z}
+                                onClick={() => handleSetZoom(i)}
+                                className={`px-3 py-1 rounded-lg font-black text-[10px] transition-all ${zoomMultiplier === z ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                {z}x
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <button 
+                        onClick={() => handleEndGame()}
+                        className="bg-red-500/20 hover:bg-red-500/40 text-red-500 p-3 rounded-xl border border-red-500/30 backdrop-blur-md font-black text-xs"
+                    >
+                        EXTRACT
+                    </button>
+                </div>
+            </div>
+
+            {/* Controls Overlay */}
+            <div className="absolute bottom-10 left-10 z-30 pointer-events-auto">
+                {/* Manual Load Button */}
+                {!isNocked && !drawPower && (
+                    <motion.button 
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        onClick={handleLoad}
+                        className="w-20 h-20 bg-yellow-500 rounded-full border-4 border-yellow-400 shadow-xl flex items-center justify-center font-black text-black text-[10px] uppercase tracking-widest"
+                    >
+                        LOAD
+                    </motion.button>
+                )}
             </div>
 
             {/* Scope UI Overlay */}
@@ -907,13 +1030,23 @@ const BirdShooting = () => {
                     <div className="w-[1px] h-screen bg-[#3bc117]/50 absolute"></div>
                     <div className="h-[1px] w-screen bg-[#3bc117]/50 absolute"></div>
                     
-                    {/* Shoot Button */}
-                    <button 
-                        onMouseDown={(e) => { e.stopPropagation(); handleShoot(); }}
-                        className="absolute bottom-10 right-10 w-24 h-24 bg-red-600 rounded-full border-4 border-red-400 shadow-[0_0_50px_rgba(255,0,0,0.5)] pointer-events-auto active:scale-90 transition-transform flex items-center justify-center font-black text-xs"
-                    >
-                        FIRE
-                    </button>
+                    <div className="absolute bottom-10 right-10 flex gap-4 pointer-events-auto">
+                        {/* Cancel Button */}
+                        <button 
+                            onMouseDown={(e) => { e.stopPropagation(); handleCancel(); }}
+                            className="w-24 h-24 bg-gray-800 rounded-full border-4 border-gray-600 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-gray-400"
+                        >
+                            CANCEL
+                        </button>
+
+                        {/* Shoot Button */}
+                        <button 
+                            onMouseDown={(e) => { e.stopPropagation(); handleShoot(); }}
+                            className="w-24 h-24 bg-red-600 rounded-full border-4 border-red-400 shadow-[0_0_50px_rgba(255,0,0,0.5)] active:scale-90 transition-transform flex items-center justify-center font-black text-xs"
+                        >
+                            FIRE
+                        </button>
+                    </div>
                 </motion.div>
             )}
             </AnimatePresence>
@@ -924,8 +1057,8 @@ const BirdShooting = () => {
                 className="w-full h-[80vh] bg-black rounded-3xl overflow-hidden shadow-2xl relative cursor-crosshair touch-none"
             >
                 {/* Instruction Overlay if needed */}
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-xs font-bold pointer-events-none text-center">
-                    HOLD TO DRAW • RELEASE TO AIM • TAP FIRE BUTTON
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-[10px] font-black pointer-events-none text-center uppercase tracking-widest bg-black/20 px-6 py-2 rounded-full backdrop-blur-sm">
+                    HOLD TO DRAW • RELEASE TO AIM • SPACE OR FIRE BUTTON TO SHOOT • ESC OR CANCEL BUTTON TO STOP
                 </div>
             </div>
           </div>
