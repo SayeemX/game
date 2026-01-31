@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { Provider, useDispatch } from 'react-redux';
 import { store } from './redux/store';
 import { fetchUserProfile } from './redux/slices/userSlice';
@@ -21,21 +21,20 @@ import BirdShooting from './components/games/BirdShooting';
 const AppContent = () => {
   const dispatch = useDispatch();
   const token = localStorage.getItem('token');
+  const location = useLocation();
   
-  // Dynamically determine basename for GitHub Pages vs Render
-  const basename = window.location.hostname.includes('github.io') ? '/game' : '/';
-
   useEffect(() => {
     if (token) {
       dispatch(fetchUserProfile());
     }
   }, [dispatch, token]);
 
+  const isGamePage = location.pathname.includes('/bird-shooting');
+
   return (
     <div className="min-h-screen bg-[#0d1117] text-white font-sans selection:bg-yellow-500 selection:text-black">
-      <Router basename={basename}>
-        <Navbar />
-        <main>
+      {!isGamePage && <Navbar />}
+      <main className={isGamePage ? 'h-screen w-screen overflow-hidden' : ''}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/profile" element={<Profile />} />
@@ -53,20 +52,28 @@ const AppContent = () => {
         </main>
         
         {/* Footer simple */}
-        <footer className="py-12 border-t border-gray-900 bg-black text-center text-gray-600 text-[10px] font-bold uppercase tracking-[0.2em]">
-            © 2026 GAMEX ELITE GAMING ARENA • ALL RIGHTS RESERVED
-        </footer>
-      </Router>
+        {!isGamePage && (
+          <footer className="py-12 border-t border-gray-900 bg-black text-center text-gray-600 text-[10px] font-bold uppercase tracking-[0.2em]">
+              © 2026 GAMEX ELITE GAMING ARENA • ALL RIGHTS RESERVED
+          </footer>
+        )}
     </div>
   );
 };
 
-const App = () => (
-  <Provider store={store}>
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  </Provider>
-);
+const App = () => {
+  // Dynamically determine basename for GitHub Pages vs Render
+  const basename = window.location.hostname.includes('github.io') ? '/game' : '/';
+  
+  return (
+    <Provider store={store}>
+      <AuthProvider>
+        <Router basename={basename}>
+          <AppContent />
+        </Router>
+      </AuthProvider>
+    </Provider>
+  );
+};
 
 export default App;

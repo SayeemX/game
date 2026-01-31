@@ -45,40 +45,90 @@ class SoundSystem {
   constructor(camera) {
     this.listener = new THREE.AudioListener();
     camera.add(this.listener);
-    this.soundLoader = new THREE.AudioLoader();
+    this.audioContext = THREE.AudioContext.getContext();
     this.sounds = {};
-    
-    // Placeholder for loading sounds
-    // In a real app, you'd preload these in a LoadingManager
-    this.loaded = false;
   }
 
   load() {
-    // Example: this.loadSound('shoot', '/assets/sounds/shoot.mp3');
-    // For now, we'll just log since we have no files
-    console.log("SoundSystem: Initialized (No audio files present)");
-  }
-
-  loadSound(name, path) {
-    const sound = new THREE.Audio(this.listener);
-    this.soundLoader.load(path, (buffer) => {
-        sound.setBuffer(buffer);
-        sound.setVolume(0.5);
-        this.sounds[name] = sound;
-    });
+    console.log("SoundSystem: Initialized with Synthesized Audio Fallback");
   }
 
   play(name) {
-    if (this.sounds[name] && !this.sounds[name].isPlaying) {
-        this.sounds[name].play();
-    } else {
-        // Fallback or log
-        // console.log(`Playing sound: ${name}`);
+    if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+    }
+
+    switch(name) {
+        case 'draw': this.synthDraw(); break;
+        case 'shoot': this.synthShoot(); break;
+        case 'hit': this.synthHit(); break;
+        case 'scope': this.synthScope(); break;
     }
   }
-  
-  playPositional(name, object) {
-      // Setup positional audio if needed
+
+  synthDraw() {
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(40, this.audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(120, this.audioContext.currentTime + 0.5);
+    gain.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+    osc.connect(gain);
+    gain.connect(this.audioContext.destination);
+    osc.start();
+    osc.stop(this.audioContext.currentTime + 0.5);
+  }
+
+  synthShoot() {
+    const noise = this.audioContext.createBufferSource();
+    const bufferSize = this.audioContext.sampleRate * 0.1;
+    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    noise.buffer = buffer;
+    
+    const filter = this.audioContext.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1000, this.audioContext.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(100, this.audioContext.currentTime + 0.1);
+    
+    const gain = this.audioContext.createGain();
+    gain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
+    
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.audioContext.destination);
+    noise.start();
+  }
+
+  synthHit() {
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, this.audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(10, this.audioContext.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.4, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
+    osc.connect(gain);
+    gain.connect(this.audioContext.destination);
+    osc.start();
+    osc.stop(this.audioContext.currentTime + 0.2);
+  }
+
+  synthScope() {
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, this.audioContext.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, this.audioContext.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.05, this.audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.1);
+    osc.connect(gain);
+    gain.connect(this.audioContext.destination);
+    osc.start();
+    osc.stop(this.audioContext.currentTime + 0.1);
   }
 }
 
@@ -172,7 +222,8 @@ class BirdSystem3D {
   createFeatherExplosion(position) {
     const featherCount = 12;
     const loader = new THREE.TextureLoader();
-    const texture = loader.load('/assets/effects/feather.png');
+    const basename = window.location.hostname.includes('github.io') ? '/game' : '';
+    const texture = loader.load(`${basename}/assets/effects/feather.png`);
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
 
     for (let i = 0; i < featherCount; i++) {
@@ -241,8 +292,41 @@ class BowSystem3D {
     this.arrows = [];
     this.loadedArrow = null;
     
+    this.crosshair = this.createCrosshair();
+    this.game.camera.add(this.crosshair); // Attach to camera
+    this.crosshair.position.set(0, 0, -5); // In front of lens
+    this.crosshair.visible = false;
+
     this.initBow();
     this.setupInputs();
+  }
+
+  createCrosshair() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.strokeStyle = '#3bc117';
+    ctx.lineWidth = 4;
+    
+    // Draw '+'
+    ctx.beginPath();
+    ctx.moveTo(64, 20); ctx.lineTo(64, 108); // Vertical
+    ctx.moveTo(20, 64); ctx.lineTo(108, 64); // Horizontal
+    ctx.stroke();
+    
+    // Optional Circle
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(64, 64, 40, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, sizeAttenuation: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.05, 0.05, 1);
+    return sprite;
   }
 
   initBow() {
@@ -328,6 +412,35 @@ class BowSystem3D {
     element.addEventListener('wheel', this._onWheel);
     window.addEventListener('mousemove', this._onMouseMove);
 
+    // Touch Listeners for Android/Mobile
+    this.lastTouch = new THREE.Vector2();
+    this._onTouchStart = (e) => {
+        if (e.target.closest('button')) return;
+        const touch = e.touches[0];
+        this.lastTouch.set(touch.clientX, touch.clientY);
+        this.handleMouseDown(e);
+    };
+    this._onTouchEnd = (e) => this.handleMouseUp(e);
+    this._onTouchMove = (e) => {
+        if (this.isScoped && !this.isTracking) {
+            e.preventDefault(); // Prevent scrolling
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - this.lastTouch.x;
+            const deltaY = touch.clientY - this.lastTouch.y;
+            this.lastTouch.set(touch.clientX, touch.clientY);
+
+            // Apply swipe aiming
+            this.game.camera.rotation.y -= deltaX * 0.004;
+            this.game.camera.rotation.x -= deltaY * 0.004;
+            this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.4, this.game.camera.rotation.x));
+            this.game.camera.rotation.order = 'YXZ';
+        }
+    };
+
+    element.addEventListener('touchstart', this._onTouchStart, { passive: false });
+    element.addEventListener('touchend', this._onTouchEnd, { passive: false });
+    element.addEventListener('touchmove', this._onTouchMove, { passive: false });
+
     // Keyboard Listener
     this.keys = {};
     this._onKeyDown = (e) => {
@@ -398,6 +511,7 @@ class BowSystem3D {
       this.isScoped = false;
       this.isNocked = false;
       this.drawPower = 0;
+      this.crosshair.visible = false;
       
       this.setZoom(0); // Reset zoom
 
@@ -417,6 +531,7 @@ class BowSystem3D {
     
     this.isDrawn = true;
     this.drawStartTime = Date.now();
+    this.game.audio.play('draw');
     this.game.haptics.trigger('draw_tension');
   }
 
@@ -443,6 +558,8 @@ class BowSystem3D {
   activateScope() {
       this.isScoped = true;
       this.game.haptics.trigger('scope_enter');
+      this.game.audio.play('scope');
+      this.crosshair.visible = true;
       this.applyZoom();
       if (this.game.onScopeEnter) this.game.onScopeEnter();
   }
@@ -469,6 +586,7 @@ class BowSystem3D {
       if (!this.isScoped || !this.isNocked) return;
       this.isScoped = false;
       this.isNocked = false;
+      this.game.audio.play('shoot');
       this.game.haptics.trigger('shoot');
       
       const direction = new THREE.Vector3();
@@ -511,6 +629,7 @@ class BowSystem3D {
           this.game.onShoot({ power: this.drawPower });
       }
 
+      this.crosshair.visible = false;
       this.setZoom(0); // Reset zoom
       if (this.loadedArrow) {
           this.bow.remove(this.loadedArrow.mesh);
@@ -527,6 +646,9 @@ class BowSystem3D {
       element.removeEventListener('mousedown', this._onMouseDown);
       element.removeEventListener('mouseup', this._onMouseUp);
       element.removeEventListener('wheel', this._onWheel);
+      element.removeEventListener('touchstart', this._onTouchStart);
+      element.removeEventListener('touchend', this._onTouchEnd);
+      element.removeEventListener('touchmove', this._onTouchMove);
       window.removeEventListener('mousemove', this._onMouseMove);
       window.removeEventListener('keydown', this._onKeyDown);
       window.removeEventListener('keyup', this._onKeyUp);
@@ -614,9 +736,11 @@ class HuntingGame3D {
     this.camera.position.set(0, 1.7, 0); // Correct Hunter Eye Level
     this.camera.rotation.order = 'YXZ';
     
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // More compatible filtering
     this.container.appendChild(this.renderer.domElement);
     
     // Lighting
@@ -639,11 +763,12 @@ class HuntingGame3D {
 
   initEnvironment() {
       const textureLoader = new THREE.TextureLoader();
+      const basename = window.location.hostname.includes('github.io') ? '/game' : '';
       
       // 360 Degree Looping Background (Skydome)
-      const bgTex = textureLoader.load('/assets/environment/game background.png', (tex) => {
+      const bgTex = textureLoader.load(`${basename}/assets/environment/game background.png`, (tex) => {
           tex.wrapS = THREE.RepeatWrapping;
-          tex.repeat.set(5, 1); // Loop the background 5 times for a full 360 view
+          tex.repeat.set(5, 1); 
           tex.colorSpace = THREE.SRGBColorSpace;
       });
       const skyGeo = new THREE.SphereGeometry(800, 32, 32);
@@ -657,7 +782,7 @@ class HuntingGame3D {
 
       // Ground
       const groundGeo = new THREE.PlaneGeometry(2000, 2000);
-      const groundTex = textureLoader.load('/assets/environment/ground.png', (tex) => {
+      const groundTex = textureLoader.load(`${basename}/assets/environment/ground.png`, (tex) => {
           tex.wrapS = THREE.RepeatWrapping;
           tex.wrapT = THREE.RepeatWrapping;
           tex.repeat.set(200, 200);
@@ -1016,6 +1141,14 @@ const BirdShooting = () => {
 
   const startNewMatch = () => {
       if (!socket) return;
+      
+      // Request Fullscreen for mobile immersion
+      if (gameContainerRef.current?.requestFullscreen) {
+          gameContainerRef.current.requestFullscreen().catch(err => {
+              console.warn("Fullscreen request failed", err);
+          });
+      }
+
       setLoading(true);
       setTimeLeft(60);
       setCurrentScore(0);
@@ -1109,7 +1242,7 @@ const BirdShooting = () => {
 
         {/* Playing State */}
         {gameState === 'playing' && (
-          <div className="relative">
+          <div className="fixed inset-0 z-[100] bg-black">
             {/* HUD */}
             <div className="absolute top-4 left-4 right-4 flex justify-between items-start z-10 pointer-events-none">
                 <div className="flex gap-4">
@@ -1246,7 +1379,7 @@ const BirdShooting = () => {
             {/* Game Container */}
             <div 
                 ref={gameContainerRef} 
-                className="w-full h-[80vh] bg-black rounded-3xl overflow-hidden shadow-2xl relative cursor-crosshair touch-none"
+                className="w-screen h-screen bg-black overflow-hidden shadow-2xl relative cursor-crosshair touch-none"
             >
                 {/* Instruction Overlay if needed */}
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-[10px] font-black pointer-events-none text-center uppercase tracking-widest bg-black/20 px-6 py-2 rounded-full backdrop-blur-sm">
