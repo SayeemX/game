@@ -26,6 +26,7 @@ const AdminDashboard = () => {
   const [shopItems, setShopItems] = useState([]);
   const [spinConfig, setSpinConfig] = useState(null);
   const [birdConfig, setBirdConfig] = useState(null);
+  const [selectedTier, setSelectedTier] = useState('BRONZE');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -71,9 +72,14 @@ const AdminDashboard = () => {
   };
 
   const handleUpdateSpinPrize = (index, field, value) => {
-    const newPrizes = [...spinConfig.prizes];
-    newPrizes[index] = { ...newPrizes[index], [field]: field === 'probability' || field === 'value' ? parseFloat(value) : value };
-    setSpinConfig({ ...spinConfig, prizes: newPrizes });
+    const newTiers = { ...spinConfig.tiers };
+    const newPrizes = [...newTiers[selectedTier].prizes];
+    newPrizes[index] = { 
+        ...newPrizes[index], 
+        [field]: field === 'probability' || field === 'value' ? parseFloat(value) : value 
+    };
+    newTiers[selectedTier] = { ...newTiers[selectedTier], prizes: newPrizes };
+    setSpinConfig({ ...spinConfig, tiers: newTiers });
   };
 
   const handleSaveSpinConfig = async () => {
@@ -590,14 +596,27 @@ const AdminDashboard = () => {
                 {activeTab === 'spin' && spinConfig && (
                     <div className="space-y-8">
                         <div className="bg-[#1a2c38] border border-gray-800 rounded-[2.5rem] p-8">
-                            <div className="flex items-center justify-between mb-8">
-                                <h2 className="text-xl font-black uppercase tracking-tighter">Wheel Configuration</h2>
+                            <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
+                                <div className="space-y-1">
+                                    <h2 className="text-xl font-black uppercase tracking-tighter">Wheel Configuration</h2>
+                                    <div className="flex bg-black/40 p-1 rounded-xl border border-gray-800">
+                                        {['BRONZE', 'SILVER', 'GOLD', 'DIAMOND'].map(t => (
+                                            <button
+                                                key={t}
+                                                onClick={() => setSelectedTier(t)}
+                                                className={`px-4 py-2 rounded-lg font-black text-[8px] uppercase tracking-widest transition-all ${selectedTier === t ? 'bg-[#1a2c38] text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                                            >
+                                                {t}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                                 <button 
                                     onClick={handleSaveSpinConfig} 
                                     disabled={formLoading}
-                                    className="px-8 py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-xl uppercase tracking-widest text-[10px] transition-all"
+                                    className="px-8 py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-xl uppercase tracking-widest text-[10px] transition-all w-full md:w-auto"
                                 >
-                                    {formLoading ? <Loader2 className="animate-spin w-4 h-4" /> : 'Save Changes'}
+                                    {formLoading ? <Loader2 className="animate-spin w-4 h-4" /> : 'Save All Tiers'}
                                 </button>
                             </div>
 
@@ -614,8 +633,8 @@ const AdminDashboard = () => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-800/50">
-                                        {spinConfig.prizes.map((prize, idx) => (
-                                            <tr key={prize.id}>
+                                        {(spinConfig.tiers?.[selectedTier]?.prizes || []).map((prize, idx) => (
+                                            <tr key={prize.id || idx}>
                                                 <td className="px-6 py-4">
                                                     <div className="w-8 h-8 rounded-lg border-2 border-gray-800" style={{ backgroundColor: prize.color }}></div>
                                                 </td>
@@ -623,14 +642,14 @@ const AdminDashboard = () => {
                                                     <input 
                                                         type="text" 
                                                         className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-full"
-                                                        value={prize.name}
+                                                        value={prize.name || ''}
                                                         onChange={(e) => handleUpdateSpinPrize(idx, 'name', e.target.value)}
                                                     />
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <select 
                                                         className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold"
-                                                        value={prize.type}
+                                                        value={prize.type || 'balance'}
                                                         onChange={(e) => handleUpdateSpinPrize(idx, 'type', e.target.value)}
                                                     >
                                                         <option value="balance">Balance</option>
@@ -645,7 +664,7 @@ const AdminDashboard = () => {
                                                     <input 
                                                         type="number" 
                                                         className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-20"
-                                                        value={prize.value}
+                                                        value={prize.value || 0}
                                                         onChange={(e) => handleUpdateSpinPrize(idx, 'value', e.target.value)}
                                                     />
                                                 </td>
@@ -663,7 +682,7 @@ const AdminDashboard = () => {
                                                     <input 
                                                         type="number" 
                                                         className="bg-black/40 border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-16"
-                                                        value={prize.probability}
+                                                        value={prize.probability || 0}
                                                         onChange={(e) => handleUpdateSpinPrize(idx, 'probability', e.target.value)}
                                                     />
                                                 </td>
@@ -673,22 +692,49 @@ const AdminDashboard = () => {
                                 </table>
                             </div>
                             
-                            <div className="mt-8 p-4 rounded-2xl bg-black/40 border border-gray-800 flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className={`px-4 py-2 rounded-xl text-xs font-black ${Math.abs(spinConfig.prizes.reduce((acc, p) => acc + (parseFloat(p.probability) || 0), 0) - 100) < 0.01 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                                        TOTAL: {spinConfig.prizes.reduce((acc, p) => acc + (parseFloat(p.probability) || 0), 0).toFixed(2)}%
+                            <div className="mt-8 p-4 rounded-2xl bg-black/40 border border-gray-800 space-y-6">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-800 pb-6">
+                                    <div className="flex items-center gap-4">
+                                        <div className={`px-4 py-2 rounded-xl text-xs font-black ${Math.abs((spinConfig.tiers?.[selectedTier]?.prizes || []).reduce((acc, p) => acc + (parseFloat(p.probability) || 0), 0) - 100) < 0.01 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                            TIER TOTAL: {(spinConfig.tiers?.[selectedTier]?.prizes || []).reduce((acc, p) => acc + (parseFloat(p.probability) || 0), 0).toFixed(2)}%
+                                        </div>
+                                        <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Selected tier must equal exactly 100%</p>
                                     </div>
-                                    <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Must equal exactly 100% for deployment</p>
+                                    
+                                    <div className="flex items-center gap-3">
+                                        <label className="text-[10px] font-black text-gray-500 uppercase">Tier Cost (TRX):</label>
+                                        <input 
+                                            type="number" 
+                                            className="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-24 outline-none focus:border-yellow-500"
+                                            value={spinConfig.tiers?.[selectedTier]?.cost || 0}
+                                            onChange={(e) => {
+                                                const newTiers = { ...spinConfig.tiers };
+                                                newTiers[selectedTier] = { ...newTiers[selectedTier], cost: parseFloat(e.target.value) };
+                                                setSpinConfig({ ...spinConfig, tiers: newTiers });
+                                            }}
+                                        />
+                                    </div>
                                 </div>
-                                
-                                <div className="flex items-center gap-3">
-                                    <label className="text-[10px] font-black text-gray-500 uppercase">Jackpot Start:</label>
-                                    <input 
-                                        type="number" 
-                                        className="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-xs font-bold w-24"
-                                        value={spinConfig.progressiveJackpot}
-                                        onChange={(e) => setSpinConfig({ ...spinConfig, progressiveJackpot: parseFloat(e.target.value) })}
-                                    />
+
+                                <div>
+                                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">Jackpot Pools (Global)</h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                        {Object.keys(spinConfig.jackpots || {}).map(j => (
+                                            <div key={j} className="space-y-2">
+                                                <label className="text-[8px] font-black text-gray-600 uppercase block">{j}</label>
+                                                <input 
+                                                    type="number" 
+                                                    className="w-full bg-black border border-gray-800 rounded-lg px-3 py-2 text-[10px] font-bold outline-none focus:border-yellow-500"
+                                                    value={spinConfig.jackpots[j].current}
+                                                    onChange={(e) => {
+                                                        const newJackpots = { ...spinConfig.jackpots };
+                                                        newJackpots[j] = { ...newJackpots[j], current: parseFloat(e.target.value) };
+                                                        setSpinConfig({ ...spinConfig, jackpots: newJackpots });
+                                                    }}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         </div>

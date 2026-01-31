@@ -7,6 +7,8 @@ import { Target, Trophy, Zap, Gamepad2, AlertCircle, ShieldCheck } from 'lucide-
 import { AuthContext } from '../../context/AuthContext';
 import { updateWallet } from '../../redux/slices/userSlice';
 
+import Arrow from '../../entities/Arrow';
+
 // --- 3D Game Classes ---
 
 class HapticSystem {
@@ -218,124 +220,74 @@ class BirdSystem3D {
 class BowSystem3D {
   constructor(game) {
     this.game = game;
-    this.loader = new THREE.TextureLoader();
     this.bow = null;
-    this.arrow = null;
     this.isDrawn = false;
     this.isScoped = false;
     this.drawPower = 0;
     this.drawStartTime = 0;
     this.maxDrawTime = 2000;
-    this.onShoot = null; // Callback
+    
+    this.arrows = [];
+    this.loadedArrow = null;
     
     this.initBow();
-    this.initArrow();
     this.setupInputs();
   }
 
   initBow() {
     this.bow = new THREE.Group();
     
-    // Load Bow Texture
-    const loader = new THREE.TextureLoader();
-    const bowTex = loader.load('/assets/weapons/wooden_bow.png');
-    const bowMat = new THREE.MeshStandardMaterial({ 
-        map: bowTex, 
-        transparent: true,
-        side: THREE.DoubleSide
+    const riserGeometry = new THREE.BoxGeometry(0.05, 0.3, 0.04);
+    const riserMaterial = new THREE.MeshStandardMaterial({
+        color: 0x8B4513,
+        roughness: 0.7
     });
-    
-    // Create a curved plane or simple plane for the bow
-    const riser = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.8, 0.8),
-      bowMat
-    );
+    const riser = new THREE.Mesh(riserGeometry, riserMaterial);
     this.bow.add(riser);
     
-    // Position bow relative to camera
+    const limbCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.4, 0, 0),
+        new THREE.Vector3(-0.3, 0.1, 0),
+        new THREE.Vector3(0, 0.15, 0),
+        new THREE.Vector3(0.3, 0.1, 0),
+        new THREE.Vector3(0.4, 0, 0)
+    ]);
+    const limbGeometry = new THREE.TubeGeometry(limbCurve, 20, 0.02, 8, false);
+    const limbMaterial = new THREE.MeshStandardMaterial({ color: 0x654321 });
+    const limbs = new THREE.Mesh(limbGeometry, limbMaterial);
+    limbs.position.y = 0.15;
+    this.bow.add(limbs);
+    
+    const stringMaterial = new THREE.LineBasicMaterial({ color: 0xFFFFFF });
+    const stringPoints = [
+        new THREE.Vector3(-0.35, 0.15, 0),
+        new THREE.Vector3(0, 0.1, 0),
+        new THREE.Vector3(0.35, 0.15, 0)
+    ];
+    this.stringGeometry = new THREE.BufferGeometry().setFromPoints(stringPoints);
+    this.bowString = new THREE.Line(this.stringGeometry, stringMaterial);
+    this.bow.add(this.bowString);
+
     this.bow.position.set(0.3, -0.4, -0.6);
-    this.bow.rotation.y = -0.2; 
     this.game.camera.add(this.bow);
   }
 
-  initArrow() {
-    this.arrow = new THREE.Group();
-    const shaft = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.005, 0.005, 0.8, 8),
-        new THREE.MeshStandardMaterial({ color: 0x444444 })
-    );
-    shaft.rotation.x = Math.PI / 2; // Align with Z
-    this.arrow.add(shaft);
-
-    this.arrow.visible = false;
-    this.game.scene.add(this.arrow); // Arrow is in world space when shot, but hand space when drawn?
-    
-    // We actually need a "nocked" arrow that is part of the bow group
-    this.nockedArrow = this.arrow.clone();
-    this.nockedArrow.visible = true;
-    this.nockedArrow.rotation.x = 0;
-    this.nockedArrow.rotation.z = -Math.PI / 2;
-    this.nockedArrow.position.set(0, 0, 0); // Centered on bow
-    this.bow.add(this.nockedArrow);
-
-    // Physics body for the flying arrow
-    this.arrowBody = new CANNON.Body({
-        mass: 0.1,
-        shape: new CANNON.Cylinder(0.005, 0.005, 0.8, 8),
-        linearDamping: 0.1
-    });
+  updateBowString(drawAmount = 0) {
+    const positions = this.stringGeometry.attributes.position.array;
+    const pullDistance = drawAmount * 0.3;
+    positions[3] = -pullDistance; 
+    positions[4] = 0.1 - (pullDistance * 0.3); 
+    this.stringGeometry.attributes.position.needsUpdate = true;
   }
 
   setupInputs() {
     const element = this.game.container;
-    this.isDragging = false;
-    this.lastTouchX = 0;
-    this.lastTouchY = 0;
-    
     element.addEventListener('mousedown', (e) => {
-        // Only trigger draw if not clicking a UI button
         if (e.target.closest('button')) return;
         this.handleMouseDown(e);
     });
     element.addEventListener('mouseup', this.handleMouseUp.bind(this));
-    
-    // Decoupled aiming: only move if scoped and not clicking FIRE
-    window.addEventListener('mousemove', (e) => {
-        if (this.isScoped && !this.game.isFiringClick) {
-            this.handleMouseMove(e);
-        }
-    });
-    
-    // Mobile Touch Logic
-    element.addEventListener('touchstart', (e) => {
-        if (e.target.closest('button')) return;
-        const touch = e.touches[0];
-        this.lastTouchX = touch.clientX;
-        this.lastTouchY = touch.clientY;
-        this.isDragging = true;
-        this.handleMouseDown(e);
-    }, { passive: false });
-
-    element.addEventListener('touchend', (e) => {
-        this.isDragging = false;
-        this.handleMouseUp(e);
-    }, { passive: false });
-
-    element.addEventListener('touchmove', (e) => {
-        if (!this.isScoped || !this.isDragging) return;
-        
-        const touch = e.touches[0];
-        const deltaX = touch.clientX - this.lastTouchX;
-        const deltaY = touch.clientY - this.lastTouchY;
-        
-        this.lastTouchX = touch.clientX;
-        this.lastTouchY = touch.clientY;
-
-        // Apply swipe aiming
-        this.game.camera.rotation.y -= deltaX * 0.004;
-        this.game.camera.rotation.x -= deltaY * 0.004;
-        this.game.camera.rotation.order = 'YXZ';
-    }, { passive: false });
+    window.addEventListener('mousemove', this.handleMouseMove.bind(this));
   }
 
   handleMouseDown(e) {
@@ -343,7 +295,13 @@ class BowSystem3D {
     this.isDrawn = true;
     this.drawStartTime = Date.now();
     this.game.haptics.trigger('draw_start');
-    this.game.audio.play('draw');
+    
+    // Load arrow visual
+    this.loadedArrow = new Arrow(new THREE.Vector3(), new THREE.Vector3(0,0,1));
+    this.loadedArrow.isActive = false; // Static while nocked
+    this.bow.add(this.loadedArrow.mesh);
+    this.loadedArrow.mesh.rotation.x = -Math.PI / 2;
+    this.loadedArrow.mesh.position.set(0, 0.1, 0);
   }
 
   handleMouseUp(e) {
@@ -355,99 +313,66 @@ class BowSystem3D {
 
   handleMouseMove(e) {
       if (this.isScoped) {
-         // Smooth delta-based aiming
          const movementX = e.movementX || 0;
          const movementY = e.movementY || 0;
-         
          this.game.camera.rotation.y -= movementX * 0.002;
          this.game.camera.rotation.x -= movementY * 0.002;
          this.game.camera.rotation.order = 'YXZ';
       }
   }
 
-  update() {
+  activateScope() {
+      this.isScoped = true;
+      this.game.haptics.trigger('scope_enter');
+      this.game.camera.fov = 15;
+      this.game.camera.updateProjectionMatrix();
+      if (this.game.onScopeEnter) this.game.onScopeEnter();
+  }
+
+  update(deltaTime) {
       if (this.isDrawn) {
           const elapsed = Date.now() - this.drawStartTime;
           this.drawPower = Math.min(elapsed / this.maxDrawTime, 1);
-          
-          // Haptic feedback for tension (every 200ms approx)
-          if (elapsed % 200 < 16) {
-             this.game.haptics.trigger('draw_tension');
-          }
-
-          // Animate pull back
-          this.nockedArrow.position.x = -this.drawPower * 0.3; // Pull back along bow's local X (which is forward/back relative to camera roughly)
-          
-          // Jitter
-          if (this.drawPower > 0.8) {
-              this.bow.position.x = 0.2 + (Math.random() - 0.5) * 0.005;
-              this.bow.position.y = -0.3 + (Math.random() - 0.5) * 0.005;
+          this.updateBowString(this.drawPower);
+          if (this.loadedArrow) {
+              // Pull arrow back along Z (local space)
+              this.loadedArrow.mesh.position.z = -this.drawPower * 0.3;
           }
       }
   }
 
-  activateScope() {
-      this.isScoped = true;
-      this.game.haptics.trigger('scope_enter');
-      this.game.audio.play('scope');
-      
-      // Zoom in
-      this.game.camera.fov = 15;
-      this.game.camera.updateProjectionMatrix();
-      
-      // Notify UI to show shoot button
-      if (this.game.onScopeEnter) this.game.onScopeEnter();
-  }
-
   shoot() {
       if (!this.isScoped) return;
-
       this.isScoped = false;
-      this.game.audio.play('shoot');
       this.game.haptics.trigger('shoot');
       
+      const direction = new THREE.Vector3();
+      this.game.camera.getWorldDirection(direction);
+      
+      const spawnPos = new THREE.Vector3();
+      this.game.camera.getWorldPosition(spawnPos);
+      
+      const flyingArrow = new Arrow(spawnPos, direction, this.drawPower);
+      flyingArrow.shoot(this.drawPower, direction);
+      this.game.scene.add(flyingArrow.mesh);
+      this.game.scene.add(flyingArrow.trail);
+      this.arrows.push(flyingArrow);
+      
       if (this.game.onShoot) {
-          this.game.onShoot({
-              power: this.drawPower,
-              // We could send more data here for verification
-          });
+          this.game.onShoot({ power: this.drawPower });
       }
 
       this.game.camera.fov = 75;
       this.game.camera.updateProjectionMatrix();
 
-      // Launch arrow
-      const direction = new THREE.Vector3();
-      this.game.camera.getWorldDirection(direction);
-      
-      const speed = 50 * this.drawPower;
-      const velocity = direction.multiplyScalar(speed);
-      
-      // Setup flying arrow
-      const flyingArrow = this.arrow.clone();
-      flyingArrow.visible = true;
-      flyingArrow.position.copy(this.game.camera.position);
-      flyingArrow.quaternion.copy(this.game.camera.quaternion);
-      
-      this.game.scene.add(flyingArrow);
-      
-      // Physics
-      const body = new CANNON.Body({
-          mass: 0.5,
-          position: new CANNON.Vec3(flyingArrow.position.x, flyingArrow.position.y, flyingArrow.position.z),
-          shape: new CANNON.Sphere(0.1) // Simplify collision
-      });
-      body.velocity.set(velocity.x, velocity.y, velocity.z);
-      this.game.world.addBody(body);
-      
-      this.game.activeArrows.push({ mesh: flyingArrow, body: body, active: true, created: Date.now() });
-      
       // Reset
-      this.nockedArrow.position.x = 0;
+      if (this.loadedArrow) {
+          this.bow.remove(this.loadedArrow.mesh);
+          this.loadedArrow = null;
+      }
+      this.updateBowString(0);
       this.drawPower = 0;
       if (this.game.onScopeExit) this.game.onScopeExit();
-      
-      // Sound?
   }
 }
 
@@ -613,14 +538,19 @@ class HuntingGame3D {
       this.world.step(1/60);
       
       // Update Systems
-      this.bowSystem.update();
+      this.bowSystem.update(deltaTime);
       this.birdSystem.updateFlock(deltaTime);
       this.physiology.update(deltaTime);
+
+      // Report draw power to React
+      if (this.onDrawUpdate) {
+          this.onDrawUpdate(this.bowSystem.drawPower);
+      }
 
       // Update particles
       for (let i = this.particles.length - 1; i >= 0; i--) {
           const p = this.particles[i];
-          p.life -= deltaTime; // Fade out based on time
+          p.life -= deltaTime; 
           if (p.life <= 0) {
               this.scene.remove(p.mesh);
               this.particles.splice(i, 1);
@@ -631,26 +561,16 @@ class HuntingGame3D {
       }
       
       // Update arrows and check collisions
-      for (let i = this.activeArrows.length - 1; i >= 0; i--) {
-          const arrow = this.activeArrows[i];
-          if (!arrow.active) continue;
+      const arrows = this.bowSystem.arrows;
+      for (let i = arrows.length - 1; i >= 0; i--) {
+          const arrow = arrows[i];
+          arrow.update(deltaTime);
           
-          arrow.mesh.position.copy(arrow.body.position);
-          
-          // Align arrow to its velocity vector
-          const vel = arrow.body.velocity;
-          if (vel.lengthSquared() > 1) {
-              const direction = new THREE.Vector3(vel.x, vel.y, vel.z).normalize();
-              const up = new THREE.Vector3(0, 1, 0);
-              const mx = new THREE.Matrix4().lookAt(
-                  new THREE.Vector3(0, 0, 0),
-                  direction,
-                  up
-              );
-              const qt = new THREE.Quaternion().setFromRotationMatrix(mx);
-              arrow.mesh.quaternion.copy(qt);
-              // Standard cylinder is Y-up, our arrow needs to point along Z
-              arrow.mesh.rotateX(Math.PI / 2);
+          if (!arrow.isActive) {
+              this.scene.remove(arrow.mesh);
+              if (arrow.trail) this.scene.remove(arrow.trail);
+              arrows.splice(i, 1);
+              continue;
           }
 
           // Collision Check
@@ -668,20 +588,12 @@ class HuntingGame3D {
                       this.birdSystem.createFeatherExplosion(bird.mesh.position);
 
                       // Remove arrow
-                      arrow.active = false;
+                      arrow.isActive = false;
                       this.scene.remove(arrow.mesh);
-                      this.world.removeBody(arrow.body);
+                      this.scene.remove(arrow.trail);
                   }
               }
           });
-
-          // Cleanup old arrows
-          if (Date.now() - arrow.created > 5000) {
-              arrow.active = false;
-              this.scene.remove(arrow.mesh);
-              this.world.removeBody(arrow.body);
-              this.activeArrows.splice(i, 1);
-          }
       }
 
       this.renderer.render(this.scene, this.camera);
@@ -706,6 +618,7 @@ const BirdShooting = () => {
   const [timeLeft, setTimeLeft] = useState(60);
   const [loading, setLoading] = useState(false);
   const [showScopeUI, setShowScopeUI] = useState(false);
+  const [drawPower, setDrawPower] = useState(0);
   const [error, setError] = useState(null);
 
   const gameContainerRef = useRef(null);
@@ -782,7 +695,11 @@ const BirdShooting = () => {
 
           // Hook UI events
           gameInstanceRef.current.onScopeEnter = () => setShowScopeUI(true);
-          gameInstanceRef.current.onScopeExit = () => setShowScopeUI(false);
+          gameInstanceRef.current.onScopeExit = () => {
+              setShowScopeUI(false);
+              setDrawPower(0);
+          };
+          gameInstanceRef.current.onDrawUpdate = (power) => setDrawPower(power);
 
           return () => {
               if (gameInstanceRef.current) {
@@ -884,6 +801,21 @@ const BirdShooting = () => {
                         <p className={`text-4xl font-black ${timeLeft < 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{timeLeft}s</p>
                     </div>
                 </div>
+
+                {/* Charge Bar */}
+                {drawPower > 0 && (
+                    <div className="flex-1 max-w-xs px-8">
+                        <div className="bg-black/40 h-4 w-full rounded-full border border-white/10 overflow-hidden backdrop-blur-sm">
+                            <motion.div 
+                                className="h-full bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${drawPower * 100}%` }}
+                                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                            />
+                        </div>
+                        <p className="text-[8px] font-black text-white/50 text-center uppercase tracking-[0.3em] mt-2">Power: {Math.round(drawPower * 100)}%</p>
+                    </div>
+                )}
                 
                 <button 
                     onClick={() => setGameState('lobby')}

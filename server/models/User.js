@@ -78,25 +78,19 @@ const userSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-userSchema.pre('save', async function(next) {
-  try {
-    if (this.isModified('password')) {
-      const salt = await bcrypt.genSalt(12);
-      this.password = await bcrypt.hash(this.password, salt);
-    }
-    
-    if (!this.referralCode) {
-      this.referralCode = Math.random().toString(36).substring(2, 10).toUpperCase();
-    }
-    
-    // Ensure spinCredits is always an object before saving
-    if (typeof this.wallet.spinCredits !== 'object' || Array.isArray(this.wallet.spinCredits)) {
-        this.wallet.spinCredits = { BRONZE: 0, SILVER: 0, GOLD: 0, DIAMOND: 0 };
-    }
-    
-    next();
-  } catch (error) {
-    next(error);
+userSchema.pre('save', async function() {
+  if (this.isModified('password')) {
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password, salt);
+  }
+  
+  if (!this.referralCode) {
+    this.referralCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+  }
+  
+  // Ensure spinCredits is always an object before saving
+  if (typeof this.wallet.spinCredits !== 'object' || Array.isArray(this.wallet.spinCredits)) {
+      this.wallet.spinCredits = { BRONZE: 0, SILVER: 0, GOLD: 0, DIAMOND: 0 };
   }
 });
 
