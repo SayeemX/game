@@ -117,19 +117,21 @@ io.use(async (socket, next) => {
 });
 
 // Track active sessions for charging
-const activeSessions = new Map(); // userId -> { startTime, lastChargeTime, socketId }
+const activeSessions = new Map(); // userId -> { startTime, lastChargeTime, socketId, totalCharged, matchId }
 
-const SESSION_CHARGE_AMOUNT = 2; // Credits to deduct
-const SESSION_CHARGE_INTERVAL = 3 * 60 * 1000; // 3 minutes
+const SESSION_CHARGE_AMOUNT = 0.1; // Credits to deduct
+const SESSION_CHARGE_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 const chargeUserSession = async (userId, io) => {
     try {
+        const session = activeSessions.get(userId);
+        if (!session) return false;
+
         const user = await User.findById(userId);
-        if (!user) return;
+        if (!user) return false;
 
         if (user.wallet.mainBalance < SESSION_CHARGE_AMOUNT) {
-            // Insufficient balance, notify and potentially end session
-            io.to(activeSessions.get(userId)?.socketId).emit('error', { 
+            io.to(session.socketId).emit('error', { 
                 message: 'Insufficient balance for session. Please refill.',
                 type: 'SESSION_EXPIRED'
             });
@@ -139,16 +141,19 @@ const chargeUserSession = async (userId, io) => {
         user.wallet.mainBalance -= SESSION_CHARGE_AMOUNT;
         await user.save();
 
+        session.totalCharged = (session.totalCharged || 0) + SESSION_CHARGE_AMOUNT;
+        session.lastChargeTime = Date.now();
+
         await Transaction.create({
             userId: user._id,
             type: 'game_bet',
             amount: SESSION_CHARGE_AMOUNT,
             currency: 'TRX',
-            description: `Bird Shooting Session Charge (3 min)`,
+            description: `Bird Shooting Session Charge (5 min) - Match: ${session.matchId}`,
             status: 'completed'
         });
 
-        io.to(activeSessions.get(userId)?.socketId).emit('balance_update', { mainBalance: user.wallet.mainBalance });
+        io.to(session.socketId).emit('balance_update', { mainBalance: user.wallet.mainBalance });
         return true;
     } catch (err) {
         console.error('Session charge error:', err);
@@ -159,24 +164,8 @@ const chargeUserSession = async (userId, io) => {
 io.on('connection', (socket) => {
     console.log(`📡 Socket Connected: ${socket.user?.username}`);
 
-    // Register user session
-    if (socket.user?.id) {
-        activeSessions.set(socket.user.id, { 
-            startTime: Date.now(), 
-            lastChargeTime: Date.now(),
-            socketId: socket.id,
-            timer: setInterval(async () => {
-                const session = activeSessions.get(socket.user.id);
-                if (session) {
-                    const success = await chargeUserSession(socket.user.id, io);
-                    if (success) {
-                        session.lastChargeTime = Date.now();
-                    }
-                }
-            }, SESSION_CHARGE_INTERVAL)
-        });
-    }
-
+    // Session will now be initialized upon match entry
+    
     socket.on('bird_shoot:join', async (data) => {
         try {
             const level = data?.level || 1;
@@ -186,12 +175,18 @@ io.on('connection', (socket) => {
             const baseFee = gameConfig?.birdShooting?.entryFee || 10;
             const entryFee = baseFee * level;
 
-            if (user.wallet.mainBalance < entryFee) {
-                return socket.emit('error', { message: 'Insufficient balance' });
+            // Check if user has enough for entry fee + initial session charge
+            if (user.wallet.mainBalance < (entryFee + SESSION_CHARGE_AMOUNT)) {
+                return socket.emit('error', { message: 'Insufficient balance for entry fee and initial session charge' });
             }
 
+            // Deduct Entry Fee
             user.wallet.mainBalance -= entryFee;
             
+            // Deduct Initial Session Charge (0.1 TRX)
+            user.wallet.mainBalance -= SESSION_CHARGE_AMOUNT;
+            await user.save();
+
             const weaponKey = user.inventory.equippedWeapon || 'basic_bow';
             let weaponStats = { key: 'basic_bow', type: 'bow', damage: 1, perks: { windResistance: 0.1 } };
             
@@ -200,7 +195,6 @@ io.on('connection', (socket) => {
                 if (weapon) weaponStats = weapon.toObject();
             } catch(e) { console.error("Weapon lookup failed, using defaults"); }
 
-            // Ammo Check & Deduction
             const ammoType = weaponStats.type === 'bow' ? 'arrow' : 'pellet';
             if (!user.inventory.items) user.inventory.items = [];
             let ammoItem = user.inventory.items.find(i => i.itemKey === ammoType);
@@ -216,9 +210,31 @@ io.on('connection', (socket) => {
 
             const game = birdShootingEngine.createGame(socket.user.id, level, weaponStats);
             game.ammo = ammoRequired;
-            game.ammoType = ammoType; // Store type to return it correctly
+            game.ammoType = ammoType;
 
-            await user.save();
+            // Start Session Tracking
+            const sessionTimer = setInterval(async () => {
+                await chargeUserSession(socket.user.id, io);
+            }, SESSION_CHARGE_INTERVAL);
+
+            activeSessions.set(socket.user.id, {
+                startTime: Date.now(),
+                lastChargeTime: Date.now(),
+                socketId: socket.id,
+                timer: sessionTimer,
+                totalCharged: SESSION_CHARGE_AMOUNT,
+                matchId: game.id
+            });
+
+            await Transaction.create({
+                userId: user._id,
+                type: 'game_bet',
+                amount: SESSION_CHARGE_AMOUNT,
+                currency: 'TRX',
+                description: `Initial Bird Shooting Session Charge - Match: ${game.id}`,
+                status: 'completed'
+            });
+
             await BirdMatch.create({
                 userId: user._id,
                 matchId: game.id,
@@ -252,6 +268,15 @@ io.on('connection', (socket) => {
 
     const finalizeMatch = async (gameId, userId) => {
         const game = birdShootingEngine.endGame(gameId);
+        
+        // Clear Session Timer
+        const session = activeSessions.get(userId);
+        if (session) {
+            clearInterval(session.timer);
+            session.endTime = Date.now();
+            console.log(`📊 Match ${gameId} finalized. Duration: ${Math.round((session.endTime - session.startTime)/1000)}s. Total Charged: ${session.totalCharged} TRX`);
+        }
+
         if (game) {
             try {
                 const reward = Math.floor(game.score / 5); 
@@ -289,15 +314,23 @@ io.on('connection', (socket) => {
                         score: game.score, 
                         reward, 
                         status: 'completed', 
-                        endedAt: new Date()
+                        endedAt: new Date(),
+                        // Add persistent session logs if model allows
+                        metadata: {
+                            inTime: session?.startTime,
+                            outTime: session?.endTime,
+                            totalCharged: session?.totalCharged
+                        }
                     }
                 );
                 
+                activeSessions.delete(userId);
                 return { game, reward, newBalance: user.wallet.mainBalance };
             } catch (err) {
                 console.error('Finalization error:', err);
             }
         }
+        activeSessions.delete(userId);
         return null;
     };
 

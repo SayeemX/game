@@ -15,6 +15,11 @@ const birdMatchSchema = new mongoose.Schema({
   },
   seed: { type: String, required: true },
   status: { type: String, enum: ['active', 'completed', 'verified', 'suspicious'], default: 'active' },
+  metadata: {
+    inTime: Number,
+    outTime: Number,
+    totalCharged: { type: Number, default: 0 }
+  },
   createdAt: { type: Date, default: Date.now },
   endedAt: Date
 });

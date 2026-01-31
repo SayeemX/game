@@ -6,7 +6,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import { Target, Trophy, Zap, Gamepad2, AlertCircle, ShieldCheck, Home, ShoppingBag, User as UserIcon, Coins, RotateCw, ChevronUp, ChevronDown } from 'lucide-react';
 import { AuthContext } from '../../context/AuthContext';
-import { updateWallet, setUserData } from '../../redux/slices/userSlice';
+import { updateWallet, setUserData, updateInventory } from '../../redux/slices/userSlice';
 import { shopAPI } from '../../services/api';
 
 import Arrow from '../../entities/Arrow';
@@ -295,59 +295,84 @@ class BowSystem3D {
     this.drawStartTime = 0;
     this.maxDrawTime = 2000;
     
-    // Zoom System (Continuous)
-    this.minZoom = 1;
-    this.maxZoom = 10;
+    // Zoom System (Discrete Steps)
+    this.zoomSteps = [2, 4, 6, 8];
+    this.zoomIndex = 0; // Starts at 2x
     this.targetZoom = 1;
     this.currentZoom = 1;
     
     this.arrows = [];
     this.loadedArrow = null;
     
-    this.crosshair = this.createCrosshair();
-    this.game.camera.add(this.crosshair); 
-    this.crosshair.position.set(0, 0, -5); 
-    this.crosshair.visible = false;
+    // Default Crosshair (+) on Bow/Target Point
+    this.defaultCrosshair = this.createDefaultCrosshair();
+    this.game.camera.add(this.defaultCrosshair);
+    this.defaultCrosshair.position.set(0, 0, -2); // Closer than scope
+    this.defaultCrosshair.visible = true;
+
+    // Scope Reticle
+    this.scopeCrosshair = this.createScopeCrosshair();
+    this.game.camera.add(this.scopeCrosshair); 
+    this.scopeCrosshair.position.set(0, 0, -5); 
+    this.scopeCrosshair.visible = false;
 
     this.initBow();
     this.setupInputs();
   }
 
-  createCrosshair() {
+  createDefaultCrosshair() {
     const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 128;
+    canvas.width = 64;
+    canvas.height = 64;
     const ctx = canvas.getContext('2d');
-    
     ctx.strokeStyle = '#3bc117';
-    ctx.lineWidth = 4;
-    
-    // Draw '+'
-    ctx.beginPath();
-    ctx.moveTo(64, 20); ctx.lineTo(64, 108); 
-    ctx.moveTo(20, 64); ctx.lineTo(108, 64); 
-    ctx.stroke();
-    
     ctx.lineWidth = 2;
+    // Draw small (+)
     ctx.beginPath();
-    ctx.arc(64, 64, 40, 0, Math.PI * 2);
+    ctx.moveTo(32, 22); ctx.lineTo(32, 42); 
+    ctx.moveTo(22, 32); ctx.lineTo(42, 32); 
     ctx.stroke();
-
     const texture = new THREE.CanvasTexture(canvas);
-    this.crosshairTexture = texture; 
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, sizeAttenuation: false });
     const sprite = new THREE.Sprite(material);
-    sprite.scale.set(0.05, 0.05, 1);
+    sprite.scale.set(0.015, 0.015, 1);
+    return sprite;
+  }
+
+  createScopeCrosshair() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#3bc117';
+    ctx.lineWidth = 4;
+    // Main Cross
+    ctx.beginPath();
+    ctx.moveTo(128, 20); ctx.lineTo(128, 236); 
+    ctx.moveTo(20, 128); ctx.lineTo(236, 128); 
+    ctx.stroke();
+    // Circle
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(128, 128, 100, 0, Math.PI * 2);
+    ctx.stroke();
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, sizeAttenuation: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.08, 0.08, 1);
     return sprite;
   }
 
   triggerHitMarker() {
-      if (!this.crosshair || !this.crosshair.material.map) return;
       const originalColor = new THREE.Color(0xffffff);
-      this.crosshair.material.color.setHex(0xff0000); 
-      setTimeout(() => {
-          if (this.crosshair) this.crosshair.material.color.copy(originalColor);
-      }, 150);
+      [this.scopeCrosshair, this.defaultCrosshair].forEach(c => {
+          if (c) {
+              c.material.color.setHex(0xff0000); 
+              setTimeout(() => {
+                  if (c) c.material.color.copy(originalColor);
+              }, 150);
+          }
+      });
   }
 
   initBow() {
@@ -419,15 +444,14 @@ class BowSystem3D {
     this._onMouseUp = (e) => this.handleMouseUp(e);
     this._onMouseMove = (e) => this.handleMouseMove(e);
     this._onWheel = (e) => {
-        if (!this.isScoped && !this.isTracking) return;
-        // Scroll to zoom
-        const zoomDelta = -e.deltaY * 0.005;
-        this.setZoomValue(this.targetZoom + zoomDelta);
+        if (!this.isScoped) return;
+        if (e.deltaY < 0) this.cycleZoom(1);
+        else this.cycleZoom(-1);
     };
 
-    element.addEventListener('mousedown', this._onMouseDown);
-    element.addEventListener('mouseup', this._onMouseUp);
-    element.addEventListener('wheel', this._onWheel);
+    element.addEventListener('mousedown', this._onMouseDown, { passive: false });
+    element.addEventListener('mouseup', this._onMouseUp, { passive: false });
+    element.addEventListener('wheel', this._onWheel, { passive: false });
     window.addEventListener('mousemove', this._onMouseMove);
 
     // Touch Support
@@ -481,17 +505,43 @@ class BowSystem3D {
     window.addEventListener('keyup', this._onKeyUp);
   }
 
-  setZoomValue(value) {
-      this.targetZoom = THREE.MathUtils.clamp(value, this.minZoom, this.maxZoom);
+  cycleZoom(dir) {
+      this.zoomIndex = THREE.MathUtils.clamp(this.zoomIndex + dir, 0, this.zoomSteps.length - 1);
+      this.targetZoom = this.zoomSteps[this.zoomIndex];
+  }
+
+  setZoomIndex(idx) {
+      this.zoomIndex = THREE.MathUtils.clamp(idx, 0, this.zoomSteps.length - 1);
+      this.targetZoom = this.zoomSteps[this.zoomIndex];
   }
 
   applyZoom() {
-      // Lerped zoom application
       const multiplier = (this.isScoped || this.isTracking) ? this.currentZoom : 1;
       const targetFOV = 75 / multiplier;
       this.game.camera.fov = targetFOV;
       this.game.camera.updateProjectionMatrix();
       if (this.game.onZoomChange) this.game.onZoomChange(multiplier);
+  }
+
+  toggleScope() {
+      if (this.isTracking) return;
+      this.isScoped = !this.isScoped;
+      
+      if (this.isScoped) {
+          this.game.audio.play('scope');
+          this.game.haptics.trigger('scope_enter');
+          this.scopeCrosshair.visible = true;
+          this.defaultCrosshair.visible = false;
+          this.targetZoom = this.zoomSteps[this.zoomIndex];
+          if (this.game.onScopeEnter) this.game.onScopeEnter();
+      } else {
+          this.scopeCrosshair.visible = false;
+          this.defaultCrosshair.visible = true;
+          this.targetZoom = 1;
+          this.currentZoom = 1;
+          if (this.game.onScopeExit) this.game.onScopeExit();
+      }
+      this.applyZoom();
   }
 
   nock() {
@@ -514,7 +564,8 @@ class BowSystem3D {
       this.isScoped = false;
       this.isNocked = false;
       this.drawPower = 0;
-      this.crosshair.visible = false;
+      this.scopeCrosshair.visible = false;
+      this.defaultCrosshair.visible = true;
       this.targetZoom = 1;
       this.currentZoom = 1;
       this.applyZoom();
@@ -545,9 +596,8 @@ class BowSystem3D {
   }
 
   handleMouseUp(e) {
-    if (this.isDrawn && !this.isScoped && !this.isTracking) {
+    if (this.isDrawn && !this.isTracking) {
       this.isDrawn = false;
-      this.activateScope();
     }
   }
 
@@ -560,16 +610,6 @@ class BowSystem3D {
          this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.4, this.game.camera.rotation.x));
          this.game.camera.rotation.order = 'YXZ';
       }
-  }
-
-  activateScope() {
-      this.isScoped = true;
-      this.game.haptics.trigger('scope_enter');
-      this.game.audio.play('scope');
-      this.crosshair.visible = true;
-      this.targetZoom = 2; // Default starting zoom
-      this.applyZoom();
-      if (this.game.onScopeEnter) this.game.onScopeEnter();
   }
 
   update(deltaTime) {
@@ -658,12 +698,14 @@ class BowSystem3D {
 
   finalizeShot() {
       this.isTracking = false;
-      this.isScoped = false;
-      this.crosshair.visible = false;
-      this.targetZoom = 1;
-      this.currentZoom = 1;
-      this.applyZoom();
-      if (this.game.onScopeExit) this.game.onScopeExit();
+      if (!this.isScoped) {
+          this.scopeCrosshair.visible = false;
+          this.defaultCrosshair.visible = true;
+          this.targetZoom = 1;
+          this.currentZoom = 1;
+          this.applyZoom();
+          if (this.game.onScopeExit) this.game.onScopeExit();
+      }
       if (this.game.onNock) this.game.onNock(false);
   }
 
@@ -1069,19 +1111,23 @@ const BirdShooting = () => {
   const [hitMessage, setHitMessage] = useState(null);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
   const [buyingAmmo, setBuyingAmmo] = useState(false);
+  const [purchaseSuccess, setPurchaseSuccess] = useState(null);
   const [error, setError] = useState(null);
 
   const gameContainerRef = useRef(null);
   const gameInstanceRef = useRef(null);
   const isFiringRef = useRef(false);
   const dispatch = useDispatch();
-  const { user, wallet } = useSelector(state => state.user);
+  const { user, wallet, inventory } = useSelector(state => state.user);
 
   const handleBuyAmmo = async (type) => {
       setBuyingAmmo(true);
       try {
           const res = await shopAPI.buyAmmo(type);
           dispatch(updateWallet(res.data.wallet));
+          dispatch(updateInventory(res.data.inventory));
+          setPurchaseSuccess(`Added ${type === 'arrow' ? '50x Arrows' : '100x Pellets'}!`);
+          setTimeout(() => setPurchaseSuccess(null), 3000);
       } catch (err) {
           setError(err.response?.data?.error || "Failed to buy ammo");
       } finally {
@@ -1272,9 +1318,15 @@ const BirdShooting = () => {
       }
   };
 
-  const handleSetZoomValue = (val) => {
-      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
-          gameInstanceRef.current.bowSystem.setZoomValue(val);
+  const handleToggleScope = () => {
+      if (gameInstanceRef.current?.bowSystem) {
+          gameInstanceRef.current.bowSystem.toggleScope();
+      }
+  };
+
+  const handleSetZoomIndex = (idx) => {
+      if (gameInstanceRef.current?.bowSystem) {
+          gameInstanceRef.current.bowSystem.setZoomIndex(idx);
       }
   };
 
@@ -1301,6 +1353,14 @@ const BirdShooting = () => {
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-white p-4 font-sans select-none relative overflow-hidden">
+      <style>{`
+        @media (max-width: 768px) {
+          .game-hud { font-size: 0.8rem; }
+          .zoom-bar { scale: 0.8; right: 1rem !important; }
+          .action-buttons { bottom: 2rem !important; right: 1rem !important; }
+          .scope-btn { width: 4rem !important; height: 4rem !important; }
+        }
+      `}</style>
       {/* Top Navigation Overlay */}
       {gameState !== 'playing' && (
         <div className="absolute top-6 left-0 right-0 flex justify-center z-[60]">
@@ -1338,51 +1398,100 @@ const BirdShooting = () => {
                     <p className="text-gray-400 font-bold tracking-[0.3em] text-xs mt-2">Next-Gen Archery Simulation</p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl">
-                    {/* Ammo Inventory */}
-                    <div className="bg-[#1a2c38] border border-gray-800 rounded-3xl p-6 text-left">
-                        <div className="flex items-center gap-3 mb-4">
-                            <Zap className="w-5 h-5 text-orange-500" />
-                            <h3 className="text-sm font-black uppercase tracking-widest text-gray-400">Current Ammo</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl mx-auto">
+                    {/* Detailed Wallet Display */}
+                    <div className="bg-[#1a2c38] border border-gray-800 rounded-3xl p-6 text-left shadow-2xl">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <Coins className="w-6 h-6 text-[#3bc117]" />
+                                <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 font-sans">Elite Wallet</h3>
+                            </div>
+                            <Link to="/wallet" className="text-[10px] font-black text-[#3bc117] hover:underline uppercase tracking-wider">Deposit</Link>
                         </div>
-                        <div className="space-y-3">
-                            {['arrow', 'pellet'].map(type => (
-                                <div key={type} className="flex justify-between items-center bg-black/20 p-3 rounded-xl border border-white/5">
-                                    <span className="text-[10px] font-bold uppercase text-gray-500">{type}s</span>
-                                    <span className="text-lg font-black text-white">
-                                        {wallet.items?.find(i => i.itemKey === type)?.amount || 0}
-                                    </span>
+                        
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center p-4 bg-black/30 rounded-2xl border border-white/5">
+                                <div>
+                                    <p className="text-[8px] font-black text-gray-500 uppercase tracking-tighter mb-1">Available Balance</p>
+                                    <p className="text-2xl font-black text-white">{wallet.mainBalance.toFixed(2)} <span className="text-xs text-[#3bc117]">TRX</span></p>
                                 </div>
-                            ))}
+                                <Trophy className="w-8 h-8 text-[#3bc117]/20" />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 bg-black/20 rounded-xl border border-white/5">
+                                    <p className="text-[8px] font-black text-gray-500 uppercase mb-1">Winnings</p>
+                                    <p className="text-sm font-black text-[#3bc117]">{wallet.totalWon.toFixed(1)}</p>
+                                </div>
+                                <div className="p-3 bg-black/20 rounded-xl border border-white/5">
+                                    <p className="text-[8px] font-black text-gray-500 uppercase mb-1">Spent</p>
+                                    <p className="text-sm font-black text-red-500">{wallet.totalSpent.toFixed(1)}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Quick Refill */}
-                    <div className="bg-[#1a2c38] border border-gray-800 rounded-3xl p-6 text-left">
-                        <div className="flex items-center gap-3 mb-4">
-                            <ShoppingBag className="w-5 h-5 text-[#3bc117]" />
-                            <h3 className="text-sm font-black uppercase tracking-widest text-gray-400">Refill Arsenal</h3>
+                    {/* Arsenal & Refill */}
+                    <div className="bg-[#1a2c38] border border-gray-800 rounded-3xl p-6 text-left shadow-2xl">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Zap className="w-6 h-6 text-orange-500" />
+                            <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 font-sans">Current Ammo</h3>
                         </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            {['arrow', 'pellet'].map(type => {
+                                const count = inventory.items?.find(i => i.itemKey === type)?.amount || 0;
+                                return (
+                                    <div key={type} className="bg-black/30 p-4 rounded-2xl border border-white/5 text-center relative overflow-hidden group">
+                                        <div className="absolute top-0 right-0 p-1">
+                                            <div className={`w-1.5 h-1.5 rounded-full ${count > 0 ? 'bg-[#3bc117] animate-pulse' : 'bg-red-500'}`}></div>
+                                        </div>
+                                        <p className="text-[10px] font-black text-gray-500 uppercase mb-1 font-sans">{type}s</p>
+                                        <p className="text-2xl font-black text-white">{count}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
                         <div className="grid grid-cols-2 gap-3">
                             <button 
                                 onClick={() => handleBuyAmmo('arrow')}
                                 disabled={buyingAmmo || wallet.mainBalance < 5}
-                                className="p-3 bg-[#3bc117]/10 hover:bg-[#3bc117]/20 border border-[#3bc117]/20 rounded-xl transition-all text-center group"
+                                className="relative py-4 bg-[#3bc117]/10 hover:bg-[#3bc117]/20 border border-[#3bc117]/20 rounded-2xl transition-all group overflow-hidden"
                             >
-                                <p className="text-[8px] font-black text-[#3bc117] uppercase mb-1">50x Arrows</p>
-                                <p className="text-xs font-black text-white">5 TRX</p>
+                                <div className="relative z-10 text-center">
+                                    <p className="text-[8px] font-black text-[#3bc117] uppercase mb-1 font-sans">Add 50x Arrows</p>
+                                    <p className="text-xs font-black text-white">5 TRX</p>
+                                </div>
+                                <motion.div className="absolute inset-0 bg-[#3bc117]/5 -translate-x-full group-hover:translate-x-0 transition-transform duration-500" />
                             </button>
                             <button 
                                 onClick={() => handleBuyAmmo('pellet')}
                                 disabled={buyingAmmo || wallet.mainBalance < 5}
-                                className="p-3 bg-[#3bc117]/10 hover:bg-[#3bc117]/20 border border-[#3bc117]/20 rounded-xl transition-all text-center group"
+                                className="relative py-4 bg-[#3bc117]/10 hover:bg-[#3bc117]/20 border border-[#3bc117]/20 rounded-2xl transition-all group overflow-hidden"
                             >
-                                <p className="text-[8px] font-black text-[#3bc117] uppercase mb-1">100x Pellets</p>
-                                <p className="text-xs font-black text-white">5 TRX</p>
+                                <div className="relative z-10 text-center">
+                                    <p className="text-[8px] font-black text-[#3bc117] uppercase mb-1 font-sans">Add 100x Pellets</p>
+                                    <p className="text-xs font-black text-white">5 TRX</p>
+                                </div>
+                                <motion.div className="absolute inset-0 bg-[#3bc117]/5 -translate-x-full group-hover:translate-x-0 transition-transform duration-500" />
                             </button>
                         </div>
                     </div>
                 </div>
+
+                <AnimatePresence>
+                    {purchaseSuccess && (
+                        <motion.div 
+                            initial={{ opacity: 0, y: 20, scale: 0.8 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, scale: 1.1 }}
+                            className="flex items-center justify-center gap-2 text-[#3bc117] font-black uppercase text-xs tracking-widest bg-[#3bc117]/10 p-4 rounded-2xl border border-[#3bc117]/30 shadow-[0_0_30px_rgba(59,193,23,0.2)] max-w-sm mx-auto"
+                        >
+                            <ShieldCheck className="w-5 h-5" /> {purchaseSuccess}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 <button 
                     onClick={startNewMatch}
@@ -1427,111 +1536,61 @@ const BirdShooting = () => {
                     </div>
                 </div>
 
-                <div className="flex gap-2 pointer-events-auto">
-                    {/* Simplified Header HUD - Zoom removed from here */}
-                    <button 
-                        onClick={() => handleEndGame()}
-                        className="bg-red-500/20 hover:bg-red-500/40 text-red-500 p-3 rounded-xl border border-red-500/30 backdrop-blur-md font-black text-xs"
-                    >
-                        EXTRACT
-                    </button>
-                </div>
-            </div>
-
-            {/* Vertical Zoom Bar (Right) */}
-            <AnimatePresence>
-                {(isScoped || isTracking) && (
-                    <motion.div 
-                        initial={{ opacity: 0, x: 50 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 50 }}
-                        className="absolute right-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
-                    >
-                        <div className="h-80 w-8 bg-black/60 rounded-xl border-2 border-white/20 p-2 relative backdrop-blur-md flex flex-col items-center">
-                            {/* Zoom Slider */}
-                            <input 
-                                type="range"
-                                min="1"
-                                max="10"
-                                step="0.1"
-                                orient="vertical"
-                                value={zoomMultiplier}
-                                onChange={(e) => handleSetZoomValue(parseFloat(e.target.value))}
-                                className="h-full w-2 appearance-none bg-white/10 rounded-full outline-none cursor-pointer accent-[#3bc117]"
-                                style={{ WebkitAppearance: 'slider-vertical' }}
-                            />
-                            
-                            {/* Zoom Markers */}
-                            <div className="absolute left-full ml-2 h-full flex flex-col justify-between py-2 pointer-events-none">
-                                {[10, 8, 6, 4, 2, 1].map(z => (
-                                    <span key={z} className="text-[8px] font-black text-white/30">{z}x</span>
-                                ))}
+                                <div className="flex gap-2 pointer-events-auto">
+                                    <button 
+                                        onClick={() => handleEndGame()}
+                                        className="bg-red-500/20 hover:bg-red-500/40 text-red-500 p-3 rounded-xl border border-red-500/30 backdrop-blur-md font-black text-xs"
+                                    >
+                                        EXTRACT
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                        <div className="text-center">
-                            <p className="text-[10px] font-black text-white uppercase tracking-widest">Scope</p>
-                            <p className="text-xl font-black text-yellow-500 italic">{zoomMultiplier.toFixed(1)}x</p>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Hit Confirmation Message */}
-            <AnimatePresence>
-                {hitMessage && (
-                    <motion.div 
-                        initial={{ opacity: 0, scale: 0.5, y: -20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 1.2 }}
-                        className="absolute top-1/3 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
-                    >
-                        <div className="bg-[#3bc117] text-black px-8 py-3 rounded-full font-black italic text-xl shadow-[0_0_50px_rgba(59,193,23,0.5)] uppercase tracking-tighter">
-                            {hitMessage}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Vertical Charge Meter (Left) */}
-            <AnimatePresence>
-                {drawPower > 0 && (
-                    <motion.div 
-                        initial={{ opacity: 0, x: -50 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -50 }}
-                        className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
-                    >
-                        <div className="h-80 w-6 bg-black/60 rounded-full border-2 border-white/20 p-1.5 relative overflow-hidden backdrop-blur-md">
-                            <motion.div 
-                                className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-red-600 via-yellow-500 to-green-400 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
-                                initial={{ height: 0 }}
-                                animate={{ height: `${drawPower * 100}%` }}
-                                transition={{ type: 'spring', stiffness: 100, damping: 20 }}
-                            />
-                            {drawPower > 0.9 && (
-                                <motion.div 
-                                    animate={{ opacity: [0.2, 0.8, 0.2] }}
-                                    transition={{ repeat: Infinity, duration: 0.4 }}
-                                    className="absolute inset-0 bg-white"
-                                />
-                            )}
-                        </div>
-                        <div className="text-center">
-                            <p className="text-[10px] font-black text-white uppercase tracking-widest">Tension</p>
-                            <p className={`text-2xl font-black italic tracking-tighter ${drawPower > 0.9 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                                {Math.round(drawPower * 100)}%
-                            </p>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Controls Overlay */}
-            <div className="absolute bottom-10 left-10 z-30 pointer-events-auto flex items-end gap-8">
-                {/* Virtual Joystick for Mobile Aiming */}
-                <Joystick onMove={handleJoystickMove} />
-            </div>
-
+                
+                            {/* Vertical Zoom Bar (Right) - Discrete Steps */}
+                            <AnimatePresence>
+                                {isScoped && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, x: 50 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        exit={{ opacity: 0, x: 50 }}
+                                        className="absolute right-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30 zoom-bar"
+                                    >
+                                        <div className="bg-[#0f212e]/80 backdrop-blur-md border-2 border-white/10 p-2 rounded-2xl flex flex-col gap-2 shadow-2xl">
+                                            {[8, 6, 4, 2].map((z, i) => (
+                                                <button
+                                                    key={z}
+                                                    onClick={() => handleSetZoomIndex(3-i)}
+                                                    className={`w-12 h-12 rounded-xl font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black shadow-[0_0_20px_rgba(59,193,23,0.4)]' : 'bg-black/40 text-gray-400 hover:text-white'}`}
+                                                >
+                                                    {z}x
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="text-center bg-black/60 p-2 rounded-xl">
+                                            <p className="text-[8px] font-black text-white uppercase tracking-widest">Zoom</p>
+                                            <p className="text-lg font-black text-yellow-500">{Math.round(zoomMultiplier)}x</p>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                
+                            {/* Hit Confirmation Message */}
+                ...
+                            {/* Controls Overlay */}
+                            <div className="absolute bottom-10 left-10 z-30 pointer-events-auto flex items-end gap-8 action-buttons">
+                                {/* Virtual Joystick */}
+                                <Joystick onMove={handleJoystickMove} />
+                                
+                                {/* Manual Scope Toggle */}
+                                {!isTracking && (
+                                    <button 
+                                        onClick={handleToggleScope}
+                                        className={`w-20 h-20 rounded-full border-4 shadow-2xl flex items-center justify-center font-black text-[10px] uppercase tracking-widest transition-all scope-btn ${isScoped ? 'bg-[#3bc117] border-[#3bc117]/50 text-black' : 'bg-gray-800 border-gray-700 text-white'}`}
+                                    >
+                                        {isScoped ? 'UNSCOPE' : 'SCOPE'}
+                                    </button>
+                                )}
+                            </div>
             {/* Bottom Inventory Drawer */}
             <div className={`absolute bottom-0 left-0 right-0 z-50 transition-transform duration-500 ${isInventoryOpen ? 'translate-y-0' : 'translate-y-[calc(100%-40px)]'}`}>
                 <div className="max-w-4xl mx-auto">
@@ -1549,11 +1608,11 @@ const BirdShooting = () => {
                         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
                             {/* Ammo Items */}
                             {['arrow', 'pellet'].map(type => {
-                                const amount = wallet.items?.find(i => i.itemKey === type)?.amount || 0;
+                                const amount = inventory.items?.find(i => i.itemKey === type)?.amount || 0;
                                 return (
                                     <div key={type} className="bg-black/40 border border-gray-800 p-3 rounded-2xl flex flex-col items-center gap-1">
                                         <Zap className={`w-4 h-4 ${type === 'arrow' ? 'text-yellow-500' : 'text-orange-500'}`} />
-                                        <p className="text-[8px] font-black text-gray-500 uppercase">{type}s</p>
+                                        <p className="text-[8px] font-black text-gray-500 uppercase font-sans">{type}s</p>
                                         <p className="text-sm font-black text-white">{amount}</p>
                                     </div>
                                 );

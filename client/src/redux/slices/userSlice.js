@@ -59,6 +59,11 @@ const userSlice = createSlice({
       totalWon: 0,
       totalSpent: 0
     },
+    inventory: {
+      weapons: [],
+      items: [],
+      equippedWeapon: 'basic_bow'
+    },
     stats: {
       totalSpins: 0,
       totalWins: 0,
@@ -82,6 +87,11 @@ const userSlice = createSlice({
         },
         totalWon: 0,
         totalSpent: 0
+      };
+      state.inventory = {
+        weapons: [],
+        items: [],
+        equippedWeapon: 'basic_bow'
       };
     },
     updateBalance: (state, action) => {
@@ -110,11 +120,15 @@ const userSlice = createSlice({
     setUserData: (state, action) => {
         state.user = action.payload;
         state.wallet = action.payload.wallet || state.wallet;
+        state.inventory = action.payload.inventory || state.inventory;
         state.stats = action.payload.stats || state.stats;
         state.isAuthenticated = true;
     },
     updateWallet: (state, action) => {
         state.wallet = { ...state.wallet, ...action.payload };
+    },
+    updateInventory: (state, action) => {
+        state.inventory = { ...state.inventory, ...action.payload };
     }
   },
   extraReducers: (builder) => {
@@ -128,6 +142,7 @@ const userSlice = createSlice({
         state.user = action.payload.user;
         state.isAuthenticated = true;
         state.wallet = action.payload.user.wallet || state.wallet;
+        state.inventory = action.payload.user.inventory || state.inventory;
         state.stats = action.payload.user.stats || state.stats;
       })
       .addCase(registerUser.pending, (state) => {
@@ -139,6 +154,7 @@ const userSlice = createSlice({
         state.user = action.payload.user;
         state.isAuthenticated = true;
         state.wallet = action.payload.user.wallet || state.wallet;
+        state.inventory = action.payload.user.inventory || state.inventory;
         state.stats = action.payload.user.stats || state.stats;
       })
       .addCase(registerUser.rejected, (state, action) => {
@@ -153,10 +169,11 @@ const userSlice = createSlice({
         state.user = action.payload;
         state.isAuthenticated = true;
         state.wallet = action.payload.wallet || state.wallet;
+        state.inventory = action.payload.inventory || state.inventory;
         state.stats = action.payload.stats || state.stats;
       });
   }
 });
 
-export const { logout, updateBalance, awardPrize, setUserData, updateWallet } = userSlice.actions;
+export const { logout, updateBalance, awardPrize, setUserData, updateWallet, updateInventory } = userSlice.actions;
 export default userSlice.reducer;
