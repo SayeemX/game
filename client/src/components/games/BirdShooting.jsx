@@ -444,17 +444,21 @@ class BowSystem3D {
     // Desktop: Right-click Mouse Look
     this._onMouseDown = (e) => {
         if (e.target.closest('button')) return;
-        if (e.button === 2) { // Right Click
+        if (e.button === 2) { // Right Click: MOVE TARGET
             this.isRightClickDown = true;
-            element.requestPointerLock();
-        } else if (e.button === 0) { // Left Click
+            if (element.requestPointerLock) element.requestPointerLock();
+        } else if (e.button === 0) { // Left Click: FIRE
             this.handleMouseDown(e);
         }
     };
     this._onMouseUp = (e) => {
         if (e.button === 2) {
             this.isRightClickDown = false;
-            if (document.pointerLockElement === element) document.exitPointerLock();
+            // Exit pointer lock if we are NOT scoped. 
+            // If scoped, we might want to keep it or follow the same RMB-only rule.
+            if (document.pointerLockElement === element && !this.isScoped) {
+                document.exitPointerLock();
+            }
         } else {
             this.handleMouseUp(e);
         }
@@ -592,18 +596,26 @@ class BowSystem3D {
       if (this.isTracking) return;
       this.isScoped = !this.isScoped;
       
+      const element = this.game.container;
+
       if (this.isScoped) {
           this.game.audio.play('scope');
           this.game.haptics.trigger('scope_enter');
           this.scopeCrosshair.visible = true;
           this.defaultCrosshair.visible = false;
           this.targetZoom = this.zoomSteps[this.zoomIndex];
+          
+          if (element.requestPointerLock) element.requestPointerLock();
+
           if (this.game.onScopeEnter) this.game.onScopeEnter();
       } else {
           this.scopeCrosshair.visible = false;
           this.defaultCrosshair.visible = true;
           this.targetZoom = 1;
           this.currentZoom = 1;
+
+          if (document.pointerLockElement === element) document.exitPointerLock();
+
           if (this.game.onScopeExit) this.game.onScopeExit();
       }
       this.applyZoom();
@@ -646,7 +658,7 @@ class BowSystem3D {
   }
 
   handleMouseDown(e) {
-    if (this.isScoped || this.isTracking) return;
+    if (this.isTracking) return;
     if (!this.isNocked) {
         if (this.game.gameData.ammo <= 0) {
             this.game.onNoAmmo();
@@ -663,14 +675,16 @@ class BowSystem3D {
   handleMouseUp(e) {
     if (this.isDrawn && !this.isTracking) {
       this.isDrawn = false;
+      this.shoot();
     }
   }
 
   handleMouseMove(e) {
-      if (!this.isTracking && (this.isScoped || this.isRightClickDown)) {
+      if (!this.isTracking && this.isRightClickDown) {
          const movementX = e.movementX || 0;
          const movementY = e.movementY || 0;
          const sensitivity = this.isScoped ? 0.001 : 0.002;
+         
          this.game.camera.rotation.y -= movementX * sensitivity;
          this.game.camera.rotation.x -= movementY * sensitivity;
          this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.4, this.game.camera.rotation.x));
@@ -700,7 +714,7 @@ class BowSystem3D {
   }
 
   shoot() {
-      if (!this.isScoped || !this.isNocked || this.isTracking) return;
+      if (!this.isNocked || this.isTracking) return;
       if (this.game.gameData.ammo <= 0) {
           this.cancel();
           return;
@@ -709,6 +723,7 @@ class BowSystem3D {
 
       this.isNocked = false;
       this.isTracking = true; 
+      this.isDrawn = false;
       if (this.game.onShotFired) this.game.onShotFired();
 
       this.game.haptics.trigger('shoot');
@@ -1272,8 +1287,10 @@ const BirdShooting = () => {
                         gameId: matchData.id,
                         shotData: {
                             ...shotData,
-                            // Send dummy coords for now to satisfy existing server logic
-                            x: 50, y: 50 
+                            birdId: shotData.birdId, // Explicitly pass the ID
+                            // Keep dummy coords for fallback/debug
+                            x: shotData.x || 50, 
+                            y: shotData.y || 50 
                         }
                     });
                 }
@@ -1624,21 +1641,8 @@ const BirdShooting = () => {
                 </div>
             </div>
 
-            {/* Static Tiny Crosshair (Draw Only) */}
-            <AnimatePresence>
-                {drawPower > 0 && !isScoped && (
-                    <motion.div 
-                        initial={{ opacity: 0, scale: 0 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none"
-                    >
-                        <div className="w-1 h-1 bg-black rounded-full shadow-[0_0_2px_rgba(255,255,255,0.5)]"></div>
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[10px] h-[1px] bg-black/30"></div>
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1px] h-[10px] bg-black/30"></div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* Static Tiny Crosshair (Draw Only) - REMOVED per user request to use 3D crosshair only */}
+
 
             {/* Vertical Zoom Bar (Right) - Discrete Steps */}
             <AnimatePresence>
@@ -1791,25 +1795,37 @@ const BirdShooting = () => {
                 >
                      {/* Scope Crosshair */}
                     <div className="w-full h-full border-[50px] border-black/80 rounded-full absolute inset-0 mix-blend-multiply"></div>
-                    <div className="w-[1px] h-screen bg-[#3bc117]/50 absolute"></div>
-                    <div className="h-[1px] w-screen bg-[#3bc117]/50 absolute"></div>
                     
-                    <div className="absolute bottom-10 right-10 flex gap-4 pointer-events-auto">
-                        {/* Cancel Button */}
+                    <div className="absolute bottom-10 right-10 flex flex-col gap-4 pointer-events-auto">
+                        {/* Charge / Fire Button */}
                         <button 
-                            onMouseDown={(e) => { e.stopPropagation(); handleCancel(); }}
-                            className="w-24 h-24 bg-gray-800 rounded-full border-4 border-gray-600 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-gray-400"
+                            onMouseDown={(e) => { e.stopPropagation(); handleLoad(); }}
+                            onMouseUp={(e) => { e.stopPropagation(); handleShoot(); }}
+                            onTouchStart={(e) => { e.stopPropagation(); handleLoad(); }}
+                            onTouchEnd={(e) => { e.stopPropagation(); handleShoot(); }}
+                            className="w-24 h-24 bg-orange-600 rounded-full border-4 border-orange-400 shadow-[0_0_50px_rgba(255,165,0,0.5)] active:scale-95 transition-transform flex flex-col items-center justify-center font-black text-[10px]"
                         >
-                            CANCEL
+                            <Zap className="w-6 h-6 mb-1" />
+                            {drawPower > 0 ? `${Math.round(drawPower * 100)}%` : 'CHARGE'}
                         </button>
 
-                        {/* Shoot Button */}
-                        <button 
-                            onMouseDown={(e) => { e.stopPropagation(); handleShoot(); }}
-                            className="w-24 h-24 bg-red-600 rounded-full border-4 border-red-400 shadow-[0_0_50px_rgba(255,0,0,0.5)] active:scale-90 transition-transform flex items-center justify-center font-black text-xs"
-                        >
-                            FIRE
-                        </button>
+                        <div className="flex gap-4">
+                            {/* Cancel Button */}
+                            <button 
+                                onMouseDown={(e) => { e.stopPropagation(); handleCancel(); }}
+                                className="w-20 h-20 bg-gray-800 rounded-full border-4 border-gray-600 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-gray-400"
+                            >
+                                CANCEL
+                            </button>
+
+                            {/* Unscope Button */}
+                            <button 
+                                onMouseDown={(e) => { e.stopPropagation(); handleToggleScope(); }}
+                                className="w-20 h-20 bg-[#3bc117] rounded-full border-4 border-[#3bc117]/50 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-black"
+                            >
+                                EXIT
+                            </button>
+                        </div>
                     </div>
                 </motion.div>
             )}

@@ -116,6 +116,9 @@ Fix12: Synchronized hit-registration visual feedback by implementing floating te
 Fix13: Resolved favicon 404 error on GitHub Pages by creating a custom favicon.svg and updating the link in index.html to use a relative path.
 Fix14: Fixed camera inversion bug by implementing vertical pitch clamping and centralized rotation velocity logic.
 Fix15: Resolved asset loading 404s on Render/GitHub subpaths by implementing a dynamic basename resolver for Three.js loaders.
+Fix16: Removed redundant 2D UI crosshairs to prevent duplication; the game now relies solely on 3D crosshairs which toggle correctly between default and scoped modes.
+Fix17: Fixed critical hit registration bug where server relied on static coordinates while client used dynamic physics. Implemented ID-based validation for reliable scoring.
+Fix18: Synchronized bird health between client and server (set to 1 HP) to ensure consistent "one-shot" kill mechanics and prevent zombie birds.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.

@@ -5,10 +5,10 @@ class BirdShootingEngine {
     this.activeGames = new Map();
     this.birdTypes = {
       sparrow: { speed: 1.5, size: 20, points: 10, rarity: 1, health: 1 },
-      pigeon: { speed: 1.2, size: 25, points: 15, rarity: 2, health: 2 },
-      crow: { speed: 2.0, size: 30, points: 25, rarity: 3, health: 3 },
-      eagle: { speed: 3.0, size: 40, points: 50, rarity: 4, health: 5 },
-      phoenix: { speed: 4.0, size: 50, points: 150, rarity: 5, health: 10 }
+      pigeon: { speed: 1.2, size: 25, points: 15, rarity: 2, health: 1 },
+      crow: { speed: 2.0, size: 30, points: 25, rarity: 3, health: 1 },
+      eagle: { speed: 3.0, size: 40, points: 50, rarity: 4, health: 1 },
+      phoenix: { speed: 4.0, size: 50, points: 150, rarity: 5, health: 1 }
     };
 
     this.PHYSICS = {
@@ -103,24 +103,35 @@ class BirdShootingEngine {
     if (!game || game.status !== 'active') return { valid: false };
 
     game.shots++;
-    const { x, y, angle, power } = shotData;
+    const { x, y, angle, power, birdId } = shotData;
 
-    // Server-side hitbox validation (relative coordinates 0-100)
     let hitBird = null;
-    for (const bird of game.birds) {
-      if (!bird.alive) continue;
-      
-      const dx = bird.x - x;
-      const dy = bird.y - y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      // Hit radius scales with bird size (blueprint spec)
-      const hitRadius = (this.birdTypes[bird.type].size / 10);
-      
-      if (distance <= hitRadius) {
-        hitBird = bird;
-        break;
-      }
+
+    // 1. Direct ID Match (Trusted Mode for Sync)
+    if (birdId !== undefined && birdId !== null) {
+        const bird = game.birds.find(b => b.id === birdId);
+        // Only register if bird is alive and hasn't been killed yet
+        if (bird && bird.alive) {
+            hitBird = bird;
+        }
+    } 
+    
+    // 2. Fallback: Hitbox Validation (if no ID provided or ID mismatch)
+    if (!hitBird) {
+        for (const bird of game.birds) {
+            if (!bird.alive) continue;
+            
+            const dx = bird.x - x;
+            const dy = bird.y - y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            const hitRadius = (this.birdTypes[bird.type].size / 10);
+            
+            if (distance <= hitRadius) {
+                hitBird = bird;
+                break;
+            }
+        }
     }
 
     if (hitBird) {
