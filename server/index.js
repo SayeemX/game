@@ -153,7 +153,10 @@ const chargeUserSession = async (userId, io) => {
             status: 'completed'
         });
 
-        io.to(session.socketId).emit('balance_update', { mainBalance: user.wallet.mainBalance });
+        io.to(session.socketId).emit('balance_update', { 
+            mainBalance: user.wallet.mainBalance,
+            sessionCharged: session.totalCharged 
+        });
         return true;
     } catch (err) {
         console.error('Session charge error:', err);
@@ -198,18 +201,20 @@ io.on('connection', (socket) => {
             const ammoType = weaponStats.type === 'bow' ? 'arrow' : 'pellet';
             if (!user.inventory.items) user.inventory.items = [];
             let ammoItem = user.inventory.items.find(i => i.itemKey === ammoType);
-            const ammoRequired = 20;
-
-            if (!ammoItem || ammoItem.amount < ammoRequired) {
+            
+            // Check if user has ANY ammo
+            if (!ammoItem || ammoItem.amount <= 0) {
                 return socket.emit('error', { 
-                    message: `Insufficient ${ammoType}s. You need ${ammoRequired} to start.`,
+                    message: `Insufficient ${ammoType}s. Please refill in the Armory.`,
                     type: 'AMMO_REQUIRED'
                 });
             }
-            ammoItem.amount -= ammoRequired;
+
+            const ammoToLoad = ammoItem.amount;
+            ammoItem.amount = 0; // Move all to active session
 
             const game = birdShootingEngine.createGame(socket.user.id, level, weaponStats);
-            game.ammo = ammoRequired;
+            game.ammo = ammoToLoad;
             game.ammoType = ammoType;
 
             // Start Session Tracking
@@ -235,6 +240,8 @@ io.on('connection', (socket) => {
                 status: 'completed'
             });
 
+            await user.save(); // Save inventory ammo deduction
+
             await BirdMatch.create({
                 userId: user._id,
                 matchId: game.id,
@@ -246,8 +253,8 @@ io.on('connection', (socket) => {
             });
             
             socket.join(game.id);
-            socket.emit('bird_shoot:session', game);
-            socket.emit('balance_update', { mainBalance: user.wallet.mainBalance });
+            socket.emit('bird_shoot:session', { ...game, sessionCharged: SESSION_CHARGE_AMOUNT });
+            socket.emit('balance_update', { mainBalance: user.wallet.mainBalance, sessionCharged: SESSION_CHARGE_AMOUNT });
         } catch (err) {
             console.error('Join Error:', err);
             socket.emit('error', { message: 'Server error joining match' });
@@ -346,13 +353,13 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         console.log(`🔌 Socket Disconnected: ${socket.user?.username}`);
         if (socket.user?.id) {
             const session = activeSessions.get(socket.user.id);
             if (session) {
-                clearInterval(session.timer);
-                activeSessions.delete(socket.user.id);
+                // Auto-finalize if disconnected during active match to return ammo
+                await finalizeMatch(session.matchId, socket.user.id);
             }
         }
     });
