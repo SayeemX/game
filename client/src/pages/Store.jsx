@@ -27,6 +27,15 @@ const Store = () => {
   const [buying, setBuying] = useState(null); // ID of item being bought
   const [status, setStatus] = useState({ type: '', message: '' });
 
+  const [selectedTier, setSelectedTier] = useState('BRONZE');
+
+  const WHEEL_TIERS = {
+    BRONZE: { label: 'Bronze', cost: 1, color: '#cd7f32' },
+    SILVER: { label: 'Silver', cost: 10, color: '#c0c0c0' },
+    GOLD: { label: 'Gold', cost: 100, color: '#ffd700' },
+    DIAMOND: { label: 'Diamond', cost: 1000, color: '#b9f2ff' }
+  };
+
   useEffect(() => {
     if (isAuthenticated) {
         fetchItems();
@@ -76,7 +85,7 @@ const Store = () => {
     setBuying(`spins-${amount}`);
     setStatus({ type: '', message: '' });
     try {
-      const res = await shopAPI.buySpins(amount);
+      const res = await shopAPI.buySpins(amount, selectedTier);
       dispatch(updateWallet(res.data.wallet));
       setStatus({ type: 'success', message: res.data.message });
     } catch (err) {
@@ -131,26 +140,47 @@ const Store = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Spins */}
                 <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b lg:border-b-0 lg:border-r border-gray-800 pb-8 lg:pb-0 lg:pr-8">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-yellow-500/10 rounded-2xl flex items-center justify-center border border-yellow-500/20">
-                            <Coins className="w-6 h-6 text-yellow-500" />
+                    <div className="flex-1 space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-yellow-500/10 rounded-2xl flex items-center justify-center border border-yellow-500/20">
+                                <Coins className="w-6 h-6 text-yellow-500" />
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-black uppercase tracking-tighter">Spin <span className="text-yellow-500">Credits</span></h2>
+                                <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">{WHEEL_TIERS[selectedTier].cost} TRX = 1 {selectedTier} Spin</p>
+                            </div>
                         </div>
-                        <div>
-                            <h2 className="text-2xl font-black uppercase tracking-tighter">Spin <span className="text-yellow-500">Credits</span></h2>
-                            <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">1 TRX = 1 Spin Credit</p>
+                        
+                        {/* Tier Selector */}
+                        <div className="flex bg-black/40 p-1 rounded-xl border border-gray-800 w-fit">
+                            {Object.keys(WHEEL_TIERS).map(tier => (
+                                <button
+                                    key={tier}
+                                    onClick={() => setSelectedTier(tier)}
+                                    className={`px-4 py-2 rounded-lg font-black text-[8px] uppercase tracking-widest transition-all ${selectedTier === tier ? 'bg-[#1a2c38] text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                                    style={{ borderBottom: selectedTier === tier ? `2px solid ${WHEEL_TIERS[tier].color}` : 'none' }}
+                                >
+                                    {tier}
+                                </button>
+                            ))}
                         </div>
                     </div>
-                    <div className="flex bg-black/40 border border-gray-800 rounded-xl p-1">
-                        {[10, 50, 100].map(amount => (
-                            <button 
-                                key={amount}
-                                onClick={() => handleBuySpins(amount)}
-                                disabled={buying === `spins-${amount}` || wallet.mainBalance < amount}
-                                className="px-4 py-2 hover:bg-white/5 rounded-lg font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50"
-                            >
-                                {buying === `spins-${amount}` ? <Loader2 className="w-3 h-3 animate-spin" /> : `${amount} Spins`}
-                            </button>
-                        ))}
+
+                    <div className="flex flex-col gap-2 min-w-[150px]">
+                        {[10, 50, 100].map(amount => {
+                            const totalCost = amount * WHEEL_TIERS[selectedTier].cost;
+                            return (
+                                <button 
+                                    key={amount}
+                                    onClick={() => handleBuySpins(amount)}
+                                    disabled={buying === `spins-${amount}` || wallet.mainBalance < totalCost}
+                                    className="flex items-center justify-between px-4 py-3 bg-black/40 border border-gray-800 hover:border-yellow-500/50 rounded-xl transition-all disabled:opacity-50 group"
+                                >
+                                    <span className="font-black text-[10px] uppercase tracking-widest text-gray-400 group-hover:text-white">{amount} SPINS</span>
+                                    <span className="font-black text-[10px] text-yellow-500">{totalCost} TRX</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
 

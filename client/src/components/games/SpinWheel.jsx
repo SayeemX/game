@@ -292,8 +292,8 @@ const SpinWheel = () => {
         if (gameData.prize.value > 0) playSound('win');
         
         dispatch(updateWallet({
-            mainBalance: gameData.wallet.balance,
-            spinCredits: gameData.wallet.spins
+            mainBalance: gameData.wallet.mainBalance,
+            spinCredits: gameData.wallet.spinCredits
         }));
       }
     };
@@ -459,12 +459,13 @@ const SpinWheel = () => {
                                     <h2 className="text-3xl font-black uppercase italic tracking-tighter">Refill <span className="text-yellow-500">{currentTier} Spins</span></h2>
                                     <div className="space-y-3">
                                         {[10, 50, 100].map(amt => {
-                                            const totalCost = amt * WHEEL_TIERS[currentTier].cost;
+                                            const tierCost = WHEEL_TIERS[currentTier]?.cost || 1;
+                                            const totalCost = amt * tierCost;
                                             return (
-                                                <button key={amt} onClick={() => handleBuySpins(amt)} disabled={buying || wallet.mainBalance < totalCost} className="w-full flex items-center justify-between p-5 bg-black/20 border border-gray-800 rounded-2xl hover:border-yellow-500/50 transition-all disabled:opacity-50">
+                                                <button key={amt} onClick={() => handleBuySpins(amt)} disabled={buying || wallet.mainBalance < totalCost} className="w-full flex items-center justify-between p-5 bg-black/20 border border-gray-800 rounded-2xl hover:border-yellow-500/50 transition-all disabled:opacity-50 group">
                                                     <div className="flex items-center gap-3">
-                                                        <RotateCw className="w-4 h-4 text-gray-500" />
-                                                        <span className="font-black uppercase tracking-widest text-xs">{amt} SPINS</span>
+                                                        <RotateCw className="w-4 h-4 text-gray-500 group-hover:text-yellow-500 transition-colors" />
+                                                        <span className="font-black uppercase tracking-widest text-xs">{amt} {currentTier} SPINS</span>
                                                     </div>
                                                     <span className="text-yellow-500 font-black">{totalCost} TRX</span>
                                                 </button>

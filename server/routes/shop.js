@@ -163,55 +163,69 @@ router.post('/equip', auth, async (req, res) => {
     }
 });
 
+const WHEEL_TIERS = {
+    BRONZE: { cost: 1, label: 'Bronze' },
+    SILVER: { cost: 10, label: 'Silver' },
+    GOLD: { cost: 100, label: 'Gold' },
+    DIAMOND: { cost: 1000, label: 'Diamond' }
+};
+
 // @route   POST api/shop/buy-spins
 // @desc    Purchase spin credits for a specific tier
 router.post('/buy-spins', auth, async (req, res) => {
     const { amount, tier = 'BRONZE' } = req.body; 
     
-    const WHEEL_TIERS = {
-        BRONZE: { cost: 1 },
-        SILVER: { cost: 10 },
-        GOLD: { cost: 100 },
-        DIAMOND: { cost: 1000 }
-    };
-
     try {
-        if (!amount || amount <= 0) {
-            return res.status(400).json({ error: 'Invalid amount' });
+        const numAmount = parseInt(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+            return res.status(400).json({ error: 'Invalid amount. Must be a positive number.' });
         }
 
-        if (!WHEEL_TIERS[tier]) {
-            return res.status(400).json({ error: 'Invalid wheel tier' });
+        const tierKey = tier.toUpperCase();
+        if (!WHEEL_TIERS[tierKey]) {
+            return res.status(400).json({ error: 'Invalid wheel tier. Choose BRONZE, SILVER, GOLD, or DIAMOND.' });
         }
 
-        const cost = amount * WHEEL_TIERS[tier].cost;
+        const tierConfig = WHEEL_TIERS[tierKey];
+        const cost = numAmount * tierConfig.cost;
+        
         const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
 
         if (user.wallet.mainBalance < cost) {
-            return res.status(400).json({ error: 'Insufficient TRX balance' });
+            return res.status(400).json({ 
+                error: `Insufficient TRX balance. Need ${cost} TRX for ${numAmount} ${tierConfig.label} spins.` 
+            });
         }
 
+        // Atomic update
         user.wallet.mainBalance -= cost;
-        
-        // Ensure spinCredits object exists and has the tier
-        if (!user.wallet.spinCredits) user.wallet.spinCredits = {};
-        user.wallet.spinCredits[tier] = (user.wallet.spinCredits[tier] || 0) + amount;
-        
         user.wallet.totalSpent += cost;
+        
+        // Ensure spinCredits is initialized correctly as an object
+        if (typeof user.wallet.spinCredits !== 'object' || Array.isArray(user.wallet.spinCredits)) {
+            user.wallet.spinCredits = { BRONZE: 0, SILVER: 0, GOLD: 0, DIAMOND: 0 };
+        }
+        
+        user.wallet.spinCredits[tierKey] = (user.wallet.spinCredits[tierKey] || 0) + numAmount;
+        
+        // Mark as modified for Mixed types
+        user.markModified('wallet.spinCredits');
 
         await Transaction.create({
             userId: user._id,
             type: 'purchase',
             amount: cost,
             currency: 'TRX',
-            description: `Purchased ${amount} ${tier} spin credits`,
+            description: `Purchased ${numAmount} ${tierConfig.label} spin credits`,
             status: 'completed'
         });
 
         await user.save();
+        
         res.json({ 
             success: true, 
-            message: `Successfully purchased ${amount} ${tier} spins!`, 
+            message: `Successfully purchased ${numAmount} ${tierConfig.label} spins!`, 
             wallet: user.wallet 
         });
     } catch (err) {

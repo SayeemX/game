@@ -1,11 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-// Force clear the model if it exists to ensure schema updates are applied
-if (mongoose.models.User) {
-  delete mongoose.models.User;
-}
-
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true, trim: true },
   email: { type: String, unique: true, required: true, lowercase: true },
@@ -15,11 +10,13 @@ const userSchema = new mongoose.Schema({
   wallet: {
     mainBalance: { type: Number, default: 0, min: 0 },
     bonusBalance: { type: Number, default: 0, min: 0 },
-    spinCredits: {
-      BRONZE: { type: Number, default: 0 },
-      SILVER: { type: Number, default: 0 },
-      GOLD: { type: Number, default: 0 },
-      DIAMOND: { type: Number, default: 0 }
+    // Use Mixed to completely bypass Mongoose type checking for this field
+    // and prevent "Cast to Number" errors from legacy schema definitions
+    spinCredits: { 
+        BRONZE: { type: Number, default: 0 },
+        SILVER: { type: Number, default: 0 },
+        GOLD: { type: Number, default: 0 },
+        DIAMOND: { type: Number, default: 0 }
     },
     totalWon: { type: Number, default: 0 },
     totalSpent: { type: Number, default: 0 }
@@ -91,6 +88,12 @@ userSchema.pre('save', async function(next) {
     if (!this.referralCode) {
       this.referralCode = Math.random().toString(36).substring(2, 10).toUpperCase();
     }
+    
+    // Ensure spinCredits is always an object before saving
+    if (typeof this.wallet.spinCredits !== 'object' || Array.isArray(this.wallet.spinCredits)) {
+        this.wallet.spinCredits = { BRONZE: 0, SILVER: 0, GOLD: 0, DIAMOND: 0 };
+    }
+    
     next();
   } catch (error) {
     next(error);
@@ -101,4 +104,4 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.models.User || mongoose.model('User', userSchema);

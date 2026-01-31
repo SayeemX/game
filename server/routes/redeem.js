@@ -54,6 +54,7 @@ router.post('/', auth, async (req, res) => {
         rewardDescription = `${redeemCode.rewardValue} TRX Bonus Balance`;
     } else if (redeemCode.rewardType === 'SPIN_CREDIT') {
         user.wallet.spinCredits.BRONZE += redeemCode.rewardValue;
+        user.markModified('wallet.spinCredits');
         rewardDescription = `${redeemCode.rewardValue} BRONZE Spin Credits`;
     }
 
