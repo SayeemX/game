@@ -8,6 +8,6 @@ const redeemCodeSchema = new mongoose.Schema({
   currentRedemptions: { type: Number, default: 0 },
   isActive: { type: Boolean, default: true },
   expiresAt: { type: Date }
-});
+}, { timestamps: true });
 
 module.exports = mongoose.model('RedeemCode', redeemCodeSchema);

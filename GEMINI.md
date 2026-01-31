@@ -47,14 +47,18 @@ Like the world's leading gaming platforms, GameX utilizes a cryptographically se
         - **Dynamic Bowstring:** Visual string deformation that follows the arrow's nock during pull-back.
         - **Ballistic Rotation:** Arrows automatically rotate during flight to align with their velocity vector.
         - **Charge Mechanics:** Vertical HUD meter with spring animations and "Max Tension" glow effects.
+        - **First-Person Immersion:** Added hunter "Arms" to the bow system that realistically draw back when the string is pulled.
     - **Hunting Simulation:**
         - **Impact Dynamics:** Arrows stick into birds or ground upon collision.
-        - **Death Animations:** Birds no longer disappear; they enter a "dying" state, falling realistically with gravity.
-        - **Feather Explosions:** Sprite-based particle systems triggered on successful hits.
+        - **Death Animations:** Birds realistically fall with gravity and rotation when hit.
+        - **Environmental Fidelity:** High-performance ground rendering and dynamic sky backgrounds.
+        - **Motivational Feedback:** 
+            - **Floating Rewards:** On every successful hit, a high-contrast "+Points" indicator floats up from the impact point using canvas-based 3D sprites.
+            - **Enhanced Impact:** Re-tuned feather explosions with randomized velocity and upward lift for a satisfying "crunchy" hit feel.
     - **Session & Economy:**
         - **Session Tracking:** Real-time monitoring of session duration via WebSockets.
-        - **Usage Fees:** Automated deduction of credits every 3 minutes of active play to maintain arena access.
-        - **Ammo Persistence:** Intelligent inventory management that returns unused projectiles to the user's permanent inventory upon match exit or completion.
+        - **Usage Fees:** Automated deduction of credits every 3 minutes of active play.
+        - **Ammo Persistence:** Intelligent inventory management that returns unused projectiles upon match exit.
 
 ### **Phase 3: Wallet & Reward Ecosystem**
 1.  **Unified Wallet:** Create a central state for Main Balance, Bonus Balance, and GameX Credits.
@@ -104,6 +108,8 @@ Fix7: Corrected bird death logic to prevent hit-registration on birds that are a
 Fix8: Resolved arrow cleanup bug where a typo prevented arrows from being removed from the scene.
 Fix9: Fixed keyboard shortcut bug where Space bar could start a draw but not transition to aiming.
 Fix10: Implemented persistent ammo return logic to ensure unused arrows are restored to user inventory upon match finalization.
+Fix11: Stabilized ground texture rendering by increasing repeat count and enabling anisotropy for better visual depth.
+Fix12: Synchronized hit-registration visual feedback by implementing floating text sprites and re-tuned particle lift.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
@@ -111,3 +117,6 @@ Fix10: Implemented persistent ammo return logic to ensure unused arrows are rest
 - **Physics V2**: Improved ballistic rotation and bird impact dynamics.
 - **Session Billing**: Real-time websocket-based credit deduction every 3 minutes of play.
 - **Inventory Persistence**: Automated projectile recovery for unused ammo across game sessions.
+- **Hunter Arms**: Visual first-person arms that draw back realistically during the charging phase.
+- **HD Environment**: Implemented high-resolution sky and tiled grass ground for real-time gaming look.
+- **Reward Animations**: Dynamic 3D floating point indicators and enhanced feather particles on every successful hunt.

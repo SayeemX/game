@@ -83,137 +83,142 @@ class SoundSystem {
 }
 
 class BirdSystem3D {
-  constructor(game) {
+  constructor(game, serverBirds) {
     this.game = game;
     this.birds = [];
-    this.flockSize = 15;
-    this.birdTypes = [
-      { name: 'Sparrow', speed: 8, size: 0.3, color: 0x8B4513, points: 10 },
-      { name: 'Pigeon', speed: 10, size: 0.5, color: 0x808080, points: 15 },
-      { name: 'Eagle', speed: 15, size: 1, color: 0xD2691E, points: 50 },
-    ];
+    this.birdConfigs = {
+      sparrow: { speed: 1.5, size: 0.4, color: 0x8B4513, points: 10 },
+      pigeon: { speed: 1.2, size: 0.5, color: 0x808080, points: 15 },
+      crow: { speed: 2.0, size: 0.6, color: 0x212121, points: 25 },
+      eagle: { speed: 3.0, size: 1.2, color: 0xD2691E, points: 50 },
+      phoenix: { speed: 4.5, size: 1.5, color: 0xff3d00, points: 150 }
+    };
     
-    this.createFlock();
+    this.initFromData(serverBirds);
   }
 
-  createFlock() {
-    for (let i = 0; i < this.flockSize; i++) {
-      const birdType = this.birdTypes[Math.floor(Math.random() * this.birdTypes.length)];
-      const bird = this.createBird(birdType);
+  initFromData(serverBirds) {
+    if (!serverBirds) return;
+    
+    serverBirds.forEach((data) => {
+      const config = this.birdConfigs[data.type] || this.birdConfigs.sparrow;
+      const bird = this.createBird(data, config);
       
-      // Random starting position in sky
+      // Map server 0-100 coordinates to world -50 to 50
       bird.mesh.position.set(
-        (Math.random() - 0.5) * 100,
-        20 + Math.random() * 30,
-        -30 - Math.random() * 50
+        (data.x - 50),
+        data.y + 10, // Elevation
+        -40 - (Math.random() * 40) // Depth layers
       );
       
-      // Random velocity
-      bird.velocity = new THREE.Vector3(
-        (Math.random() - 0.5) * birdType.speed,
-        0,
-        (Math.random() - 0.5) * birdType.speed
-      );
-      
+      bird.velocity = new THREE.Vector3(config.speed * 2, 0, 0);
       bird.active = true;
+      bird.serverId = data.id;
       this.birds.push(bird);
       this.game.scene.add(bird.mesh);
-    }
+    });
   }
 
-  createBird(type) {
+  createBird(data, config) {
     const birdGroup = new THREE.Group();
     
-    // Body (ellipsoid)
-    const bodyGeometry = new THREE.SphereGeometry(type.size, 16, 16);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ 
-      color: type.color,
-      roughness: 0.8
-    });
-    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.castShadow = true;
+    // Body
+    const body = new THREE.Mesh(
+        new THREE.SphereGeometry(config.size, 8, 8),
+        new THREE.MeshStandardMaterial({ color: config.color, roughness: 0.8 })
+    );
+    body.scale.set(1, 0.6, 1.2);
     birdGroup.add(body);
     
-    // Wings (animated)
-    const wingGeometry = new THREE.BoxGeometry(type.size * 1.5, type.size * 0.1, type.size * 0.5);
-    const wingMaterial = new THREE.MeshStandardMaterial({ color: type.color });
-    
-    const leftWing = new THREE.Mesh(wingGeometry, wingMaterial);
-    leftWing.position.set(0, 0, type.size * 0.6);
-    leftWing.rotation.y = Math.PI / 4;
-    birdGroup.wingLeft = leftWing;
-    birdGroup.add(leftWing);
-    
-    const rightWing = new THREE.Mesh(wingGeometry, wingMaterial);
-    rightWing.position.set(0, 0, -type.size * 0.6);
-    rightWing.rotation.y = -Math.PI / 4;
-    birdGroup.wingRight = rightWing;
-    birdGroup.add(rightWing);
-    
-    // Physics body (Kinematic for birds as they fly by logic, not gravity)
-    const birdBody = new CANNON.Body({
-      mass: 0, // Kinematic
-      position: new CANNON.Vec3(0, 0, 0),
-      shape: new CANNON.Sphere(type.size)
-    });
+    // Wings
+    const wingMat = new THREE.MeshStandardMaterial({ color: config.color, side: THREE.DoubleSide });
+    const wingLeft = new THREE.Mesh(new THREE.PlaneGeometry(config.size * 2, config.size), wingMat);
+    wingLeft.position.set(-config.size, 0, 0);
+    wingLeft.rotation.y = Math.PI / 2;
+    birdGroup.add(wingLeft);
+    birdGroup.wingLeft = wingLeft;
+
+    const wingRight = new THREE.Mesh(new THREE.PlaneGeometry(config.size * 2, config.size), wingMat);
+    wingRight.position.set(config.size, 0, 0);
+    wingRight.rotation.y = -Math.PI / 2;
+    birdGroup.add(wingRight);
+    birdGroup.wingRight = wingRight;
     
     return {
       mesh: birdGroup,
-      body: birdBody,
-      type: type,
-      velocity: new THREE.Vector3(),
-      wingFlapPhase: Math.random() * Math.PI * 2,
-      wingFlapSpeed: 5 + Math.random() * 5
+      type: config,
+      wingFlapSpeed: 5 + Math.random() * 5,
+      wingFlapPhase: Math.random() * Math.PI,
+      serverId: data.id
     };
   }
 
   updateFlock(deltaTime) {
     this.birds.forEach((bird) => {
-      if (!bird.active) return;
+      if (!bird.active || bird.isDying) return;
       
-      // Bounce off bounds
-      if (bird.mesh.position.x > 100 || bird.mesh.position.x < -100) bird.velocity.x *= -1;
-      if (bird.mesh.position.z > 50 || bird.mesh.position.z < -150) bird.velocity.z *= -1;
+      bird.mesh.position.x += bird.velocity.x * deltaTime;
+      if (bird.mesh.position.x > 60) bird.mesh.position.x = -60;
       
-      bird.mesh.position.add(bird.velocity.clone().multiplyScalar(deltaTime));
-      
-      // Update rotation to face direction
-      if (bird.velocity.lengthSq() > 0.01) {
-        bird.mesh.rotation.y = Math.atan2(-bird.velocity.z, bird.velocity.x);
-      }
-      
-      // Update physics body
-      bird.body.position.copy(bird.mesh.position);
-      
-      // Wing animation
       const time = Date.now() * 0.001;
-      const flap = Math.sin(time * bird.wingFlapSpeed + bird.wingFlapPhase) * Math.PI / 4;
-      bird.mesh.wingLeft.rotation.x = flap;
-      bird.mesh.wingRight.rotation.x = -flap;
+      const flap = Math.sin(time * bird.wingFlapSpeed + bird.wingFlapPhase) * 0.8;
+      bird.mesh.wingLeft.rotation.z = flap;
+      bird.mesh.wingRight.rotation.z = -flap;
     });
   }
 
   createFeatherExplosion(position) {
-    const featherCount = 10;
+    const featherCount = 12;
     const loader = new THREE.TextureLoader();
     const texture = loader.load('/assets/effects/feather.png');
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
 
     for (let i = 0; i < featherCount; i++) {
-        const sprite = new THREE.Sprite(material);
+        const sprite = new THREE.Sprite(material.clone());
         sprite.position.copy(position);
-        sprite.scale.set(0.5, 0.5, 0.5);
+        sprite.scale.set(0.4, 0.4, 0.4);
         
-        // Random velocity
         const velocity = new THREE.Vector3(
-            (Math.random() - 0.5) * 5,
-            (Math.random() - 0.5) * 5,
-            (Math.random() - 0.5) * 5
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 8 + 2,
+            (Math.random() - 0.5) * 8
         );
         
         this.game.scene.add(sprite);
-        this.game.particles.push({ mesh: sprite, velocity, life: 1.0 });
+        this.game.particles.push({ mesh: sprite, velocity, life: 1.2 });
     }
+  }
+
+  createFloatingScore(position, points) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    
+    // Draw Glow
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = '#3bc117';
+    
+    // Draw Text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'black 100px Inter, Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`+${points}`, 128, 90);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new THREE.Sprite(material);
+    
+    sprite.position.copy(position);
+    sprite.position.y += 1.5;
+    sprite.scale.set(4, 2, 1);
+    
+    this.game.scene.add(sprite);
+    this.game.particles.push({ 
+        mesh: sprite, 
+        velocity: new THREE.Vector3(0, 3, 0), 
+        life: 2.0 
+    });
   }
 }
 
@@ -223,9 +228,13 @@ class BowSystem3D {
     this.bow = null;
     this.isDrawn = false;
     this.isScoped = false;
+    this.isNocked = false;
     this.drawPower = 0;
     this.drawStartTime = 0;
     this.maxDrawTime = 2000;
+    
+    this.zoomLevels = [1, 2, 3, 4, 10];
+    this.currentZoomIndex = 0;
     
     this.arrows = [];
     this.loadedArrow = null;
@@ -245,6 +254,23 @@ class BowSystem3D {
     const riser = new THREE.Mesh(riserGeometry, riserMaterial);
     this.bow.add(riser);
     
+    // Hunter Arms
+    const armMat = new THREE.MeshStandardMaterial({ color: 0xdbac98, roughness: 0.8 });
+    
+    // Right Arm (Holding riser)
+    const rightArmGeo = new THREE.CylinderGeometry(0.04, 0.06, 1.0, 8);
+    rightArmGeo.rotateX(Math.PI / 2);
+    const rightArm = new THREE.Mesh(rightArmGeo, armMat);
+    rightArm.position.set(0.1, -0.2, 0.4);
+    this.bow.add(rightArm);
+
+    // Left Arm (Drawing string)
+    const leftArmGeo = new THREE.CylinderGeometry(0.04, 0.06, 1.0, 8);
+    leftArmGeo.rotateX(Math.PI / 2);
+    this.leftArm = new THREE.Mesh(leftArmGeo, armMat);
+    this.leftArm.position.set(-0.4, -0.3, 0.6);
+    this.bow.add(this.leftArm);
+
     const limbCurve = new THREE.CatmullRomCurve3([
         new THREE.Vector3(-0.4, 0, 0),
         new THREE.Vector3(-0.3, 0.1, 0),
@@ -264,8 +290,7 @@ class BowSystem3D {
         new THREE.Vector3(0, 0.1, 0),
         new THREE.Vector3(0.35, 0.15, 0)
     ];
-    this.stringGeometry = new THREE.BufferGeometry().setFromPoints(stringPoints);
-    this.bowString = new THREE.Line(this.stringGeometry, stringMaterial);
+    this.bowString = new THREE.Line(new THREE.BufferGeometry().setFromPoints(stringPoints), stringMaterial);
     this.bow.add(this.bowString);
 
     this.bow.position.set(0.3, -0.4, -0.6);
@@ -278,7 +303,7 @@ class BowSystem3D {
     const pullDistance = drawAmount * 0.3;
     positions[3] = -pullDistance; 
     positions[4] = 0.1 - (pullDistance * 0.3); 
-    this.stringGeometry.attributes.position.needsUpdate = true;
+    this.bowString.geometry.attributes.position.needsUpdate = true;
   }
 
   setupInputs() {
@@ -291,34 +316,42 @@ class BowSystem3D {
     };
     this._onMouseUp = (e) => this.handleMouseUp(e);
     this._onMouseMove = (e) => this.handleMouseMove(e);
+    this._onWheel = (e) => {
+        if (e.deltaY < 0) this.cycleZoom(1);
+        else this.cycleZoom(-1);
+    };
 
     element.addEventListener('mousedown', this._onMouseDown);
     element.addEventListener('mouseup', this._onMouseUp);
+    element.addEventListener('wheel', this._onWheel);
     window.addEventListener('mousemove', this._onMouseMove);
 
     // Keyboard Listener
+    this.keys = {};
     this._onKeyDown = (e) => {
+        this.keys[e.code] = true;
         if (e.repeat) return;
+        
+        if (e.code === 'KeyR') this.nock();
         if (e.code === 'Space') {
             e.preventDefault();
-            if (!this.isScoped && !this.isDrawn) {
-                this.handleMouseDown(e);
-            } else if (this.isScoped) {
-                this.shoot();
-            }
+            if (!this.isScoped && !this.isDrawn) this.handleMouseDown(e);
+            else if (this.isScoped) this.shoot();
         }
-        if (e.code === 'Escape') {
-            if (this.isDrawn || this.isScoped) {
-                this.cancel();
-            }
-        }
+        if (e.code === 'Escape' && (this.isDrawn || this.isScoped)) this.cancel();
+        
+        // Quick Zoom
+        if (e.code === 'Digit1') this.setZoom(0);
+        if (e.code === 'Digit2') this.setZoom(1);
+        if (e.code === 'Digit3') this.setZoom(2);
+        if (e.code === 'Digit4') this.setZoom(3);
+        if (e.code === 'Digit5') this.setZoom(4);
     };
 
     this._onKeyUp = (e) => {
+        this.keys[e.code] = false;
         if (e.code === 'Space') {
-            if (this.isDrawn && !this.isScoped) {
-                this.handleMouseUp(e);
-            }
+            if (this.isDrawn && !this.isScoped) this.handleMouseUp(e);
         }
     };
 
@@ -326,24 +359,46 @@ class BowSystem3D {
     window.addEventListener('keyup', this._onKeyUp);
   }
 
-  destroy() {
-      const element = this.game.container;
-      element.removeEventListener('mousedown', this._onMouseDown);
-      element.removeEventListener('mouseup', this._onMouseUp);
-      window.removeEventListener('mousemove', this._onMouseMove);
-      window.removeEventListener('keydown', this._onKeyDown);
-      window.removeEventListener('keyup', this._onKeyUp);
+  cycleZoom(direction) {
+      this.currentZoomIndex = Math.max(0, Math.min(this.zoomLevels.length - 1, this.currentZoomIndex + direction));
+      this.applyZoom();
   }
+
+  setZoom(index) {
+      this.currentZoomIndex = Math.max(0, Math.min(this.zoomLevels.length - 1, index));
+      this.applyZoom();
+  }
+
+  applyZoom() {
+      const multiplier = this.zoomLevels[this.currentZoomIndex];
+      const targetFOV = 75 / multiplier;
+      this.game.camera.fov = targetFOV;
+      this.game.camera.updateProjectionMatrix();
+      if (this.game.onZoomChange) this.game.onZoomChange(multiplier);
+  }
+
+  nock() {
+      if (this.isNocked || this.isDrawn) return;
+      this.isNocked = true;
+      this.game.haptics.trigger('draw_start');
+      
+      this.loadedArrow = new Arrow(new THREE.Vector3(), new THREE.Vector3(0,0,1));
+      this.loadedArrow.isActive = false; 
+      this.bow.add(this.loadedArrow.mesh);
+      this.loadedArrow.mesh.rotation.x = -Math.PI / 2;
+      this.loadedArrow.mesh.position.set(0, 0.1, 0);
+      
+      if (this.game.onNock) this.game.onNock(true);
+  }
+
   cancel() {
       this.isDrawn = false;
       this.isScoped = false;
+      this.isNocked = false;
       this.drawPower = 0;
       
-      // Reset Camera
-      this.game.camera.fov = 75;
-      this.game.camera.updateProjectionMatrix();
+      this.setZoom(0); // Reset zoom
 
-      // Remove Visual Arrow
       if (this.loadedArrow) {
           this.bow.remove(this.loadedArrow.mesh);
           this.loadedArrow = null;
@@ -351,20 +406,16 @@ class BowSystem3D {
       this.updateBowString(0);
       
       if (this.game.onScopeExit) this.game.onScopeExit();
+      if (this.game.onNock) this.game.onNock(false);
   }
 
   handleMouseDown(e) {
     if (this.isScoped) return;
+    if (!this.isNocked) this.nock();
+    
     this.isDrawn = true;
     this.drawStartTime = Date.now();
-    this.game.haptics.trigger('draw_start');
-    
-    // Load arrow visual
-    this.loadedArrow = new Arrow(new THREE.Vector3(), new THREE.Vector3(0,0,1));
-    this.loadedArrow.isActive = false; // Static while nocked
-    this.bow.add(this.loadedArrow.mesh);
-    this.loadedArrow.mesh.rotation.x = -Math.PI / 2;
-    this.loadedArrow.mesh.position.set(0, 0.1, 0);
+    this.game.haptics.trigger('draw_tension');
   }
 
   handleMouseUp(e) {
@@ -387,26 +438,41 @@ class BowSystem3D {
   activateScope() {
       this.isScoped = true;
       this.game.haptics.trigger('scope_enter');
-      this.game.camera.fov = 15;
-      this.game.camera.updateProjectionMatrix();
+      this.applyZoom();
       if (this.game.onScopeEnter) this.game.onScopeEnter();
   }
 
   update(deltaTime) {
+      // Keyboard Aiming
+      if (this.isScoped || this.isDrawn) {
+          const aimSpeed = 1.5 * deltaTime;
+          if (this.keys['KeyW'] || this.keys['ArrowUp']) this.game.camera.rotation.x += aimSpeed;
+          if (this.keys['KeyS'] || this.keys['ArrowDown']) this.game.camera.rotation.x -= aimSpeed;
+          if (this.keys['KeyA'] || this.keys['ArrowLeft']) this.game.camera.rotation.y += aimSpeed;
+          if (this.keys['KeyD'] || this.keys['ArrowRight']) this.game.camera.rotation.y -= aimSpeed;
+      }
+
       if (this.isDrawn) {
           const elapsed = Date.now() - this.drawStartTime;
           this.drawPower = Math.min(elapsed / this.maxDrawTime, 1);
           this.updateBowString(this.drawPower);
+          
+          // Animate arm drawing back
+          if (this.leftArm) {
+              this.leftArm.position.z = 0.6 + this.drawPower * 0.2;
+              this.leftArm.position.x = -0.4 - this.drawPower * 0.1;
+          }
+
           if (this.loadedArrow) {
-              // Pull arrow back along Z (local space)
               this.loadedArrow.mesh.position.z = -this.drawPower * 0.3;
           }
       }
   }
 
   shoot() {
-      if (!this.isScoped) return;
+      if (!this.isScoped || !this.isNocked) return;
       this.isScoped = false;
+      this.isNocked = false;
       this.game.haptics.trigger('shoot');
       
       const direction = new THREE.Vector3();
@@ -415,28 +481,23 @@ class BowSystem3D {
       const spawnPos = new THREE.Vector3();
       this.game.camera.getWorldPosition(spawnPos);
       
-      // 1. Create Visual Arrow
       const flyingArrow = new Arrow(spawnPos, direction, this.drawPower);
       this.game.scene.add(flyingArrow.mesh);
       this.game.scene.add(flyingArrow.trail);
 
-      // 2. Create Physics Body
       const arrowBody = new CANNON.Body({
           mass: 0.2,
           position: new CANNON.Vec3(spawnPos.x, spawnPos.y, spawnPos.z),
-          shape: new CANNON.Sphere(0.05), // Sharp tip collision
+          shape: new CANNON.Sphere(0.05),
           linearDamping: 0.01,
           allowSleep: false
       });
 
-      // 3. Launch
       const baseSpeed = 85; 
       const launchVelocity = direction.multiplyScalar(baseSpeed * this.drawPower);
       arrowBody.velocity.set(launchVelocity.x, launchVelocity.y, launchVelocity.z);
       
-      // 4. Hit Registration Logic
       arrowBody.addEventListener('collide', (event) => {
-          // Stop arrow on impact with non-bird objects (ground/trees)
           if (flyingArrow.isActive) {
               flyingArrow.isActive = false;
               arrowBody.velocity.set(0, 0, 0);
@@ -454,10 +515,7 @@ class BowSystem3D {
           this.game.onShoot({ power: this.drawPower });
       }
 
-      this.game.camera.fov = 75;
-      this.game.camera.updateProjectionMatrix();
-
-      // Reset Bow
+      this.setZoom(0); // Reset zoom
       if (this.loadedArrow) {
           this.bow.remove(this.loadedArrow.mesh);
           this.loadedArrow = null;
@@ -465,6 +523,17 @@ class BowSystem3D {
       this.updateBowString(0);
       this.drawPower = 0;
       if (this.game.onScopeExit) this.game.onScopeExit();
+      if (this.game.onNock) this.game.onNock(false);
+  }
+
+  destroy() {
+      const element = this.game.container;
+      element.removeEventListener('mousedown', this._onMouseDown);
+      element.removeEventListener('mouseup', this._onMouseUp);
+      element.removeEventListener('wheel', this._onWheel);
+      window.removeEventListener('mousemove', this._onMouseMove);
+      window.removeEventListener('keydown', this._onKeyDown);
+      window.removeEventListener('keyup', this._onKeyUp);
   }
 }
 
@@ -505,8 +574,9 @@ class PhysiologicalSimulation {
 }
 
 class HuntingGame3D {
-  constructor(container, onScore, onShoot) {
+  constructor(container, gameData, onScore, onShoot) {
     this.container = container;
+    this.gameData = gameData;
     this.onScore = onScore;
     this.onShoot = onShoot;
     this.activeArrows = [];
@@ -521,7 +591,7 @@ class HuntingGame3D {
     this.audio.load();
 
     this.bowSystem = new BowSystem3D(this);
-    this.birdSystem = new BirdSystem3D(this);
+    this.birdSystem = new BirdSystem3D(this, gameData.birds);
     this.physiology = new PhysiologicalSimulation(this);
     
     this.animate = this.animate.bind(this);
@@ -571,16 +641,31 @@ class HuntingGame3D {
   }
 
   initEnvironment() {
-      // Ground
-      const groundGeo = new THREE.PlaneGeometry(1000, 1000);
       const textureLoader = new THREE.TextureLoader();
-      const groundTex = textureLoader.load('/assets/environment/ground.png');
-      groundTex.wrapS = THREE.RepeatWrapping;
-      groundTex.wrapT = THREE.RepeatWrapping;
-      groundTex.repeat.set(100, 100);
-      groundTex.colorSpace = THREE.SRGBColorSpace; 
       
-      const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 });
+      // Sky Background
+      const skyTex = textureLoader.load('/assets/environment/sky_day.png', (tex) => {
+          this.scene.background = tex;
+      }, undefined, (err) => {
+          console.warn("Sky texture failed to load, using color fallback");
+          this.scene.background = new THREE.Color(0x87CEEB);
+      });
+
+      // Ground
+      const groundGeo = new THREE.PlaneGeometry(2000, 2000);
+      const groundTex = textureLoader.load('/assets/environment/ground.png', (tex) => {
+          tex.wrapS = THREE.RepeatWrapping;
+          tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(200, 200);
+          tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      });
+      
+      const groundMat = new THREE.MeshStandardMaterial({ 
+          map: groundTex, 
+          roughness: 0.8,
+          metalness: 0.1,
+          color: 0x3a5f0b 
+      });
       const ground = new THREE.Mesh(groundGeo, groundMat);
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
@@ -684,7 +769,20 @@ class HuntingGame3D {
                       this.onScore(bird.type.points);
                       
                       this.haptics.trigger('hit');
+                      this.audio.play('hit');
                       this.birdSystem.createFeatherExplosion(bird.mesh.position);
+                      this.birdSystem.createFloatingScore(bird.mesh.position, bird.type.points);
+
+                      if (this.game.onShoot) {
+                          this.game.onShoot({ 
+                              power: this.drawPower,
+                              hit: true,
+                              birdId: bird.serverId,
+                              // Project 3D impact back to 0-100 for server
+                              x: (bird.mesh.position.x + 50),
+                              y: (bird.mesh.position.y - 10)
+                          });
+                      }
 
                       // Arrow sticks into bird
                       arrow.isActive = false;
@@ -719,6 +817,32 @@ class HuntingGame3D {
       this.container.innerHTML = '';
   }
 }
+
+const Joystick = ({ onMove }) => {
+    const joystickRef = useRef(null);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+
+    const handleDrag = (event, info) => {
+        const x = info.offset.x;
+        const y = info.offset.y;
+        setPosition({ x, y });
+        onMove({ x: x / 50, y: -y / 50 });
+    };
+
+    return (
+        <div className="relative w-32 h-32 bg-white/10 rounded-full border-2 border-white/20 backdrop-blur-md flex items-center justify-center">
+            <motion.div
+                drag
+                dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+                dragElastic={1}
+                onDrag={handleDrag}
+                onDragEnd={() => { setPosition({ x: 0, y: 0 }); onMove({ x: 0, y: 0 }); }}
+                className="w-12 h-12 bg-yellow-500 rounded-full shadow-2xl cursor-pointer"
+                animate={position}
+            />
+        </div>
+    );
+};
 
 // --- React Component ---
 
@@ -796,6 +920,7 @@ const BirdShooting = () => {
       if (gameState === 'playing' && gameContainerRef.current && matchData) {
           gameInstanceRef.current = new HuntingGame3D(
             gameContainerRef.current, 
+            matchData,
             (points) => {
                 setCurrentScore(prev => prev + points);
                 // In a production app, we'd wait for server confirmation of the hit
@@ -901,6 +1026,15 @@ const BirdShooting = () => {
       }
   };
 
+  const handleJoystickMove = (delta) => {
+      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
+          const sensitivity = 0.05;
+          gameInstanceRef.current.camera.rotation.y -= delta.x * sensitivity;
+          gameInstanceRef.current.camera.rotation.x += delta.y * sensitivity;
+          gameInstanceRef.current.camera.rotation.order = 'YXZ';
+      }
+  };
+
   // Component Keyboard shortcuts
   useEffect(() => {
       const handleGlobalKeyDown = (e) => {
@@ -1001,8 +1135,45 @@ const BirdShooting = () => {
                 </div>
             </div>
 
+            {/* Vertical Charge Meter (Left) */}
+            <AnimatePresence>
+                {drawPower > 0 && (
+                    <motion.div 
+                        initial={{ opacity: 0, x: -50 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -50 }}
+                        className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
+                    >
+                        <div className="h-80 w-6 bg-black/60 rounded-full border-2 border-white/20 p-1.5 relative overflow-hidden backdrop-blur-md">
+                            <motion.div 
+                                className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-red-600 via-yellow-500 to-green-400 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+                                initial={{ height: 0 }}
+                                animate={{ height: `${drawPower * 100}%` }}
+                                transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+                            />
+                            {drawPower > 0.9 && (
+                                <motion.div 
+                                    animate={{ opacity: [0.2, 0.8, 0.2] }}
+                                    transition={{ repeat: Infinity, duration: 0.4 }}
+                                    className="absolute inset-0 bg-white"
+                                />
+                            )}
+                        </div>
+                        <div className="text-center">
+                            <p className="text-[10px] font-black text-white uppercase tracking-widest">Tension</p>
+                            <p className={`text-2xl font-black italic tracking-tighter ${drawPower > 0.9 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                                {Math.round(drawPower * 100)}%
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Controls Overlay */}
-            <div className="absolute bottom-10 left-10 z-30 pointer-events-auto">
+            <div className="absolute bottom-10 left-10 z-30 pointer-events-auto flex items-end gap-8">
+                {/* Virtual Joystick for Mobile Aiming */}
+                <Joystick onMove={handleJoystickMove} />
+
                 {/* Manual Load Button */}
                 {!isNocked && !drawPower && (
                     <motion.button 
