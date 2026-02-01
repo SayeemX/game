@@ -14,19 +14,30 @@ const AuthForm = ({ mode = 'login' }) => {
   const [formData, setFormData] = useState({ 
     username: '', 
     email: '', 
-    password: '' 
+    password: '',
+    confirmPassword: ''
   });
+  const [validationError, setValidationError] = useState(null);
 
   // Sync with route changes
   React.useEffect(() => {
     setIsLogin(mode === 'login');
-    setFormData({ username: '', email: '', password: '' });
+    setFormData({ username: '', email: '', password: '', confirmPassword: '' });
+    setValidationError(null);
   }, [mode]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setValidationError(null);
+
+    if (!isLogin && formData.password !== formData.confirmPassword) {
+      setValidationError("Passwords do not match");
+      return;
+    }
+
     const action = isLogin ? loginUser : registerUser;
-    const result = await dispatch(action(formData));
+    const { confirmPassword, ...submitData } = formData;
+    const result = await dispatch(action(isLogin ? formData : submitData));
     
     if (action.fulfilled.match(result)) {
       navigate('/');
@@ -50,13 +61,13 @@ const AuthForm = ({ mode = 'login' }) => {
             </p>
           </div>
           
-          {error && (
+          {(error || validationError) && (
             <motion.div 
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-2xl mb-8 text-center text-sm font-bold"
             >
-                {error}
+                {validationError || error}
             </motion.div>
           )}
 
@@ -98,6 +109,20 @@ const AuthForm = ({ mode = 'login' }) => {
                 required
               />
             </div>
+
+            {!isLogin && (
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
+                <input
+                  type="password"
+                  placeholder="RETYPE PASSWORD"
+                  className="w-full pl-12 pr-4 py-4 rounded-2xl bg-black border border-gray-800 text-white placeholder:text-gray-700 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none transition font-bold text-sm uppercase tracking-wider"
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  required
+                />
+              </div>
+            )}
 
             <button
               type="submit"

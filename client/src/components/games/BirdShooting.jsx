@@ -2051,6 +2051,8 @@ const BirdShooting = () => {
                     DRAG LEFT TO DRAW • RELEASE TO HOLD • DRAG RIGHT TO AIM • TAP LEFT TO SHOOT
                 </div>
             </div>
+          </div>
+        )}
 
         {/* Results State */}
         <AnimatePresence>

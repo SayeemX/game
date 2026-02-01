@@ -138,6 +138,8 @@ Fix48: Optimized server-side hit validation in `BirdShootingEngine.js` by accoun
 Fix49: Standardized wallet transaction logging to include session charges and entry fees in `user.wallet.totalSpent`.
 Fix50: Refined cinematic camera resets and improved Follow-Cam viewing angles for a more professional sniper experience.
 Fix51: Refined "Skip" logic: Marks the flying arrow as 'skipped' (guaranteed miss) and immediately resets the camera and player state for the next shot, while allowing the arrow to continue its physical trajectory visually.
+Fix52: Final audit of game logic and successful deployment of refined mobile ergonomics.
+Fix53: Added "Retype Password" field to registration page with matching validation logic to ensure credential integrity.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
