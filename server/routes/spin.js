@@ -17,12 +17,13 @@ const WHEEL_TIERS = {
 // Default prize templates for initial setup
 const getPrizesForTier = (tier) => {
     const basePrizes = [
-        { id: '1', name: "0.1 TRX", value: 0.1, type: "balance", probability: 30, color: "#4CAF50" },
-        { id: '2', name: "1 TRX", value: 1, type: "balance", probability: 20, color: "#8BC34A" },
-        { id: '3', name: "Loss", value: 0, type: "crash", probability: 30, color: "#9E9E9E" },
+        { id: '1', name: "0.1 TRX", value: 0.1, type: "balance", probability: 25, color: "#4CAF50" },
+        { id: '2', name: "1 TRX", value: 1, type: "balance", probability: 15, color: "#8BC34A" },
+        { id: '3', name: "Loss", value: 0, type: "crash", probability: 25, color: "#9E9E9E" },
         { id: '4', name: "5 TRX", value: 5, type: "balance", probability: 10, color: "#FF9800" },
         { id: '5', name: "MINI", value: 0, type: "jackpot", jackpotType: 'MINI', probability: 5, color: "#FFEB3B" },
-        { id: '6', name: "Free Spin", value: 1, type: "spins", probability: 5, color: "#2196F3" }
+        { id: '6', name: "Free Spin", value: 1, type: "spins", probability: 10, color: "#2196F3" },
+        { id: '7', name: "50x Arrows", value: 50, type: "item", itemKey: "arrow", probability: 10, color: "#9C27B0" }
     ];
     
     // Scale values based on tier cost
@@ -84,7 +85,8 @@ router.post('/initialize', auth, async (req, res) => {
       serverSeedHash: spinEngine.sha256(user.provablyFair.serverSeed),
       tiers: gameConfig.spinGame.tiers,
       jackpots: gameConfig.spinGame.jackpots,
-      wallet: user.wallet
+      wallet: user.wallet,
+      inventory: user.inventory
     });
 
   } catch (error) {
@@ -216,6 +218,7 @@ router.post('/play', auth, async (req, res) => {
       prize: winningPrize,
       result: { hash: rawHash, nonce, clientSeed: currentClientSeed },
       wallet: user.wallet,
+      inventory: user.inventory,
       jackpots: gameConfig.spinGame.jackpots
     });
 

@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import ReactConfetti from 'react-confetti';
 import { spinAPI, shopAPI } from '../../services/api';
-import { updateWallet } from '../../redux/slices/userSlice';
+import { updateWallet, updateInventory } from '../../redux/slices/userSlice';
 import ProvablyFairSettings from '../ProvablyFairSettings';
 
 const WHEEL_CONFIGS = {
@@ -93,6 +93,8 @@ const SpinWheel = () => {
       const res = await spinAPI.initialize();
       setTiersData(res.data.tiers);
       setJackpots(res.data.jackpots);
+      if (res.data.wallet) dispatch(updateWallet(res.data.wallet));
+      if (res.data.inventory) dispatch(updateInventory(res.data.inventory));
     } catch (err) {
       setError('System initialization error. Please refresh.');
     }
@@ -290,10 +292,10 @@ const SpinWheel = () => {
         setJackpots(gameData.jackpots);
         if (gameData.prize.value > 0) playSound('win');
         
-        dispatch(updateWallet({
-            mainBalance: gameData.wallet.mainBalance,
-            spinCredits: gameData.wallet.spinCredits
-        }));
+        dispatch(updateWallet(gameData.wallet));
+        if (gameData.inventory) {
+            dispatch(updateInventory(gameData.inventory));
+        }
       }
     };
     
