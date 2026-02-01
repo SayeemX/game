@@ -172,7 +172,15 @@ io.on('connection', (socket) => {
     socket.on('bird_shoot:join', async (data) => {
         try {
             const level = data?.level || 1;
-            const user = await User.findById(socket.user.id);
+            const userId = socket.user.id;
+
+            // Clear any existing session/timer for this user
+            const existingSession = activeSessions.get(userId);
+            if (existingSession && existingSession.timer) {
+                clearInterval(existingSession.timer);
+            }
+
+            const user = await User.findById(userId);
             
             const gameConfig = await Game.findOne();
             const baseFee = gameConfig?.birdShooting?.entryFee || 10;

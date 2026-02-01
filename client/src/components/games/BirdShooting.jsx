@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
@@ -11,13 +12,47 @@ import { shopAPI } from '../../services/api';
 
 import Arrow from '../../entities/Arrow';
 
-// --- Environment Themes ---
-const ENVIRONMENT_THEMES = {
-  1: { sky: 'skybgg.jpg', ground: 'ground.png', groundColor: 0x3a5f0b, fog: 0x87CEEB },
-  2: { sky: 'hill%20background.jpg', ground: 'ground2.png', groundColor: 0x5d4037, fog: 0x90a4ae },
-  3: { sky: 'night_background.png', ground: 'ground.png', groundColor: 0x1a2c38, fog: 0x0f212e },
-  4: { sky: 'rainbow_background.png', ground: 'ground2.png', groundColor: 0x4a148c, fog: 0x6a1b9a }
-};
+// --- Procedural Asset Generators (Canvas) ---
+
+function createCloudTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 60);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+    grad.addColorStop(0.4, 'rgba(255, 255, 255, 0.5)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+    
+    return new THREE.CanvasTexture(canvas);
+}
+
+function createFlowerTexture(color = '#FFFF00') {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.fillStyle = color;
+    for(let i=0; i<5; i++) {
+        const angle = (i * 2 * Math.PI) / 5;
+        const x = 32 + Math.cos(angle) * 15;
+        const y = 32 + Math.sin(angle) * 15;
+        ctx.beginPath();
+        ctx.arc(x, y, 10, 0, Math.PI*2);
+        ctx.fill();
+    }
+    ctx.fillStyle = '#443300';
+    ctx.beginPath();
+    ctx.arc(32, 32, 8, 0, Math.PI*2);
+    ctx.fill();
+
+    return new THREE.CanvasTexture(canvas);
+}
 
 class HapticSystem {
   constructor() {
@@ -145,85 +180,75 @@ class BirdSystem3D {
     this.game = game;
     this.birds = [];
     this.birdConfigs = {
-      sparrow: { speed: 1.5, size: 0.4, color: 0x8B4513, points: 10 },
-      pigeon: { speed: 1.2, size: 0.5, color: 0x808080, points: 15 },
-      crow: { speed: 2.0, size: 0.6, color: 0x212121, points: 25 },
-      eagle: { speed: 3.0, size: 1.2, color: 0xD2691E, points: 50 },
-      phoenix: { speed: 4.5, size: 1.5, color: 0xff3d00, points: 150 }
+      sparrow: { speed: 1.5, size: 1.2, points: 10, asset: 'sparrow' },
+      pigeon: { speed: 1.2, size: 1.4, points: 15, asset: 'pigeon' },
+      crow: { speed: 2.0, size: 1.5, points: 25, asset: 'pigeon' },
+      eagle: { speed: 3.0, size: 2.2, points: 50, asset: 'eagle' },
+      phoenix: { speed: 4.5, size: 2.5, points: 150, asset: 'rare' }
     };
     
+    this.textureLoader = new THREE.TextureLoader();
     this.initFromData(serverBirds);
   }
 
   initFromData(serverBirds) {
     if (!serverBirds) return;
     
+    const basename = window.location.hostname.includes('github.io') ? window.location.pathname.split('/')[1] ? `/${window.location.pathname.split('/')[1]}` : '' : '';
+
     serverBirds.forEach((data) => {
       const config = this.birdConfigs[data.type] || this.birdConfigs.sparrow;
-      const bird = this.createBird(data, config);
       
+      const texturePath = `${basename}/assets/birds/${config.asset}/fly.png`;
+      const texture = this.textureLoader.load(texturePath);
+      
+      // Use Mesh with PlaneGeometry instead of Sprite to allow Y-axis flipping
+      const geometry = new THREE.PlaneGeometry(config.size, config.size);
+      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geometry, material);
+      
+      // Face flight direction (birds fly left-to-right by default speed > 0)
+      if (config.speed < 0) mesh.rotation.y = Math.PI; 
+
       // Map server 0-100 coordinates to world -50 to 50
-      bird.mesh.position.set(
+      mesh.position.set(
         (data.x - 50),
-        data.y + 10, // Elevation
-        -40 - (Math.random() * 40) // Depth layers
+        data.y + 10,
+        -40 - (Math.random() * 40)
       );
       
-      bird.velocity = new THREE.Vector3(config.speed * 2, 0, 0);
-      bird.active = true;
-      bird.serverId = data.id;
+      const bird = {
+        mesh: mesh,
+        type: config,
+        velocity: new THREE.Vector3(config.speed * 2, 0, 0),
+        active: true,
+        serverId: data.id,
+        isDying: false
+      };
+      
       this.birds.push(bird);
       this.game.scene.add(bird.mesh);
     });
   }
 
-  createBird(data, config) {
-    const birdGroup = new THREE.Group();
-    
-    // Body
-    const body = new THREE.Mesh(
-        new THREE.SphereGeometry(config.size, 8, 8),
-        new THREE.MeshStandardMaterial({ color: config.color, roughness: 0.8 })
-    );
-    body.scale.set(1, 0.6, 1.2);
-    body.castShadow = true;
-    body.receiveShadow = true;
-    birdGroup.add(body);
-    
-    // Wings
-    const wingMat = new THREE.MeshStandardMaterial({ color: config.color, side: THREE.DoubleSide });
-    const wingLeft = new THREE.Mesh(new THREE.PlaneGeometry(config.size * 2, config.size), wingMat);
-    wingLeft.position.set(-config.size, 0, 0);
-    wingLeft.rotation.y = Math.PI / 2;
-    birdGroup.add(wingLeft);
-    birdGroup.wingLeft = wingLeft;
-
-    const wingRight = new THREE.Mesh(new THREE.PlaneGeometry(config.size * 2, config.size), wingMat);
-    wingRight.position.set(config.size, 0, 0);
-    wingRight.rotation.y = -Math.PI / 2;
-    birdGroup.add(wingRight);
-    birdGroup.wingRight = wingRight;
-    
-    return {
-      mesh: birdGroup,
-      type: config,
-      wingFlapSpeed: 5 + Math.random() * 5,
-      wingFlapPhase: Math.random() * Math.PI,
-      serverId: data.id
-    };
-  }
-
   updateFlock(deltaTime) {
+    const time = Date.now() * 0.001;
     this.birds.forEach((bird) => {
       if (!bird.active || bird.isDying) return;
       
       bird.mesh.position.x += bird.velocity.x * deltaTime;
       if (bird.mesh.position.x > 60) bird.mesh.position.x = -60;
       
-      const time = Date.now() * 0.001;
-      const flap = Math.sin(time * bird.wingFlapSpeed + bird.wingFlapPhase) * 0.8;
-      bird.mesh.wingLeft.rotation.z = flap;
-      bird.mesh.wingRight.rotation.z = -flap;
+      // Flapping Animation: Oscillate scale to simulate wing movement
+      const flap = Math.sin(time * (10 + bird.type.speed * 2));
+      bird.mesh.scale.y = 1.0 + flap * 0.2;
+      
+      // Subtle bobbing
+      bird.mesh.position.y += Math.sin(time * 2) * 0.005;
+      
+      // Face movement direction
+      bird.mesh.lookAt(bird.mesh.position.clone().add(bird.velocity));
+      bird.mesh.rotateY(Math.PI / 2); // Correct orientation for PlaneGeometry
     });
   }
 
@@ -295,6 +320,11 @@ class BowSystem3D {
     this.drawStartTime = 0;
     this.maxDrawTime = 2000;
     
+    // Smooth Camera Properties
+    this.rotationVelocity = new THREE.Vector2();
+    this.lookSensitivity = 0.002;
+    this.damping = 0.92; // Inertia factor
+    
     // Zoom System (Discrete Steps)
     this.zoomSteps = [2, 4, 6, 8];
     this.zoomIndex = 0; // Starts at 2x
@@ -308,13 +338,7 @@ class BowSystem3D {
     this.mouse = new THREE.Vector2();
     this.isRightClickDown = false;
 
-    // Default Crosshair (+) on Bow/Target Point
-    this.defaultCrosshair = this.createDefaultCrosshair();
-    this.game.camera.add(this.defaultCrosshair);
-    this.defaultCrosshair.position.set(0, 0, -2); // Closer than scope
-    this.defaultCrosshair.visible = true;
-
-    // Scope Reticle
+    // Scope Reticle (3D, only for scoped mode)
     this.scopeCrosshair = this.createScopeCrosshair();
     this.game.camera.add(this.scopeCrosshair); 
     this.scopeCrosshair.position.set(0, 0, -5); 
@@ -322,25 +346,6 @@ class BowSystem3D {
 
     this.initBow();
     this.setupInputs();
-  }
-
-  createDefaultCrosshair() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    ctx.strokeStyle = '#3bc117';
-    ctx.lineWidth = 2;
-    // Draw small (+)
-    ctx.beginPath();
-    ctx.moveTo(32, 22); ctx.lineTo(32, 42); 
-    ctx.moveTo(22, 32); ctx.lineTo(42, 32); 
-    ctx.stroke();
-    const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, sizeAttenuation: false });
-    const sprite = new THREE.Sprite(material);
-    sprite.scale.set(0.015, 0.015, 1);
-    return sprite;
   }
 
   createScopeCrosshair() {
@@ -369,14 +374,12 @@ class BowSystem3D {
 
   triggerHitMarker() {
       const originalColor = new THREE.Color(0xffffff);
-      [this.scopeCrosshair, this.defaultCrosshair].forEach(c => {
-          if (c) {
-              c.material.color.setHex(0xff0000); 
-              setTimeout(() => {
-                  if (c) c.material.color.copy(originalColor);
-              }, 150);
-          }
-      });
+      if (this.scopeCrosshair) {
+          this.scopeCrosshair.material.color.setHex(0xff0000); 
+          setTimeout(() => {
+              if (this.scopeCrosshair) this.scopeCrosshair.material.color.copy(originalColor);
+          }, 150);
+      }
   }
 
   initBow() {
@@ -432,107 +435,165 @@ class BowSystem3D {
   updateBowString(drawAmount = 0) {
     if (!this.bowString || !this.bowString.geometry) return;
     const positions = this.bowString.geometry.attributes.position.array;
-    const pullDistance = drawAmount * 0.3;
-    positions[3] = -pullDistance; 
-    positions[4] = 0.1 - (pullDistance * 0.3); 
+    
+    // Dynamic Deformation based on Draw
+    const pullDistance = drawAmount * 0.35; 
+    
+    // Midpoint of the string gets pulled back (negative Z in local space relative to rest)
+    // Local rest is around +0.1 Z. Pulling it back goes negative.
+    positions[3] = 0; // X center
+    positions[4] = 0.1 - (pullDistance * 0.5); // Y (Height adjustment if needed, usually minor)
+    positions[5] = 0 - pullDistance; // Z (Pull back)
+
     this.bowString.geometry.attributes.position.needsUpdate = true;
   }
 
   setupInputs() {
     const element = this.game.container;
     
-    // Desktop: Right-click Mouse Look
+    // Desktop: Mouse Look & Click to Shoot
     this._onMouseDown = (e) => {
         if (e.target.closest('button')) return;
-        if (e.button === 2) { // Right Click: MOVE TARGET
-            this.isRightClickDown = true;
-            if (element.requestPointerLock) element.requestPointerLock();
-        } else if (e.button === 0) { // Left Click: FIRE
+        // Right Click: Just enables look (if we want explicit toggle)
+        // Left Click: Charge/Shoot
+        if (e.button === 0) {
             this.handleMouseDown(e);
         }
     };
+    
     this._onMouseUp = (e) => {
-        if (e.button === 2) {
-            this.isRightClickDown = false;
-            // Exit pointer lock if we are NOT scoped. 
-            // If scoped, we might want to keep it or follow the same RMB-only rule.
-            if (document.pointerLockElement === element && !this.isScoped) {
-                document.exitPointerLock();
-            }
-        } else {
+        if (e.button === 0) {
             this.handleMouseUp(e);
         }
     };
-    this._onMouseMove = (e) => this.handleMouseMove(e);
-    this._onContextMenu = (e) => e.preventDefault();
-    this._onWheel = (e) => {
-        if (!this.isScoped) return;
-        if (e.deltaY < 0) this.cycleZoom(1);
-        else this.cycleZoom(-1);
+
+    this._onMouseMove = (e) => {
+        // Always look if not touching? Or only if right click?
+        // Let's keep "Always Look" for desktop if pointer is locked, or explicit drag.
+        // For simplicity in this hybrid code:
+        if (document.pointerLockElement === element) {
+             const movementX = e.movementX || 0;
+             const movementY = e.movementY || 0;
+             // Add to velocity instead of direct rotation
+             this.rotationVelocity.x -= movementX * 0.0002;
+             this.rotationVelocity.y -= movementY * 0.0002;
+        }
     };
-
-    element.addEventListener('mousedown', this._onMouseDown);
+    
+    element.addEventListener('mousedown', (e) => {
+        if(e.button === 0) this._onMouseDown(e);
+        if(e.button === 2) {
+            // Right click requests pointer lock for desktop experience
+            if (document.pointerLockElement !== element) element.requestPointerLock();
+        }
+    });
     element.addEventListener('mouseup', this._onMouseUp);
-    element.addEventListener('contextmenu', this._onContextMenu);
-    element.addEventListener('wheel', this._onWheel, { passive: false });
-    window.addEventListener('mousemove', this._onMouseMove);
+    document.addEventListener('mousemove', this._onMouseMove);
 
-    // Touch Support
-    this.touchStartTime = 0;
-    this.touchStartPos = new THREE.Vector2();
-    this.lastTouch = new THREE.Vector2();
-    this.isDragging = false;
+    // --- Mobile Touch Controls (Split Screen) ---
+    this.activeTouches = {}; // Map identifier -> 'aim' | 'charge'
+    this.chargeStartY = 0;
 
     this._onTouchStart = (e) => {
         if (e.target.closest('button')) return;
-        const touch = e.touches[0];
-        this.touchStartTime = Date.now();
-        this.touchStartPos.set(touch.clientX, touch.clientY);
-        this.lastTouch.set(touch.clientX, touch.clientY);
-        this.isDragging = false;
-        // Do not call handleMouseDown here, wait for check in End
+        
+        const width = element.clientWidth;
+
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            
+            if (touch.clientX < width / 2) {
+                // LEFT SIDE: CHARGE
+                this.activeTouches[touch.identifier] = 'charge';
+                this.chargeStartY = touch.clientY;
+                
+                // Start Charging
+                if (!this.isNocked) {
+                   if (this.game.gameData.ammo <= 0) {
+                       this.game.onNoAmmo();
+                       return;
+                   }
+                   this.nock();
+                }
+                this.isDrawn = true;
+                this.drawStartTime = Date.now();
+                this.game.audio.play('draw');
+                this.game.haptics.trigger('draw_tension');
+
+            } else {
+                // RIGHT SIDE: AIM
+                this.activeTouches[touch.identifier] = 'aim';
+                this.lastTouchX = touch.clientX;
+                this.lastTouchY = touch.clientY;
+            }
+        }
     };
 
     this._onTouchMove = (e) => {
         e.preventDefault();
-        const touch = e.touches[0];
-        const deltaX = touch.clientX - this.lastTouch.x;
-        const deltaY = touch.clientY - this.lastTouch.y;
         
-        const distFromStart = this.touchStartPos.distanceTo(new THREE.Vector2(touch.clientX, touch.clientY));
-        if (distFromStart > 10) this.isDragging = true;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            const type = this.activeTouches[touch.identifier];
 
-        if (!this.isTracking) {
-            const sensitivity = this.isScoped ? 0.002 : 0.004;
-            this.game.camera.rotation.y -= deltaX * sensitivity;
-            this.game.camera.rotation.x -= deltaY * sensitivity;
-            this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.4, this.game.camera.rotation.x));
-            this.game.camera.rotation.order = 'YXZ';
+            if (type === 'charge') {
+                // Drag Down to Increase Power
+                const deltaY = touch.clientY - this.chargeStartY;
+                // Map delta to 0-1 range. Max pull ~200px
+                const power = Math.min(Math.max(deltaY / 200, 0), 1);
+                
+                // We manually override draw power here instead of time-based
+                this.drawPower = power;
+                this.updateBowString(this.drawPower);
+                
+                // Visual Arm Movement
+                if (this.leftArm) {
+                    this.leftArm.position.z = 0.6 + this.drawPower * 0.2;
+                    this.leftArm.position.x = -0.4 - this.drawPower * 0.1;
+                }
+                if (this.loadedArrow) {
+                    this.loadedArrow.mesh.position.z = -this.drawPower * 0.3;
+                }
+
+            } else if (type === 'aim') {
+                const deltaX = touch.clientX - this.lastTouchX;
+                const deltaY = touch.clientY - this.lastTouchY;
+                
+                // Analog Smoothing: Add to velocity
+                const sensitivity = this.isScoped ? 0.0005 : 0.0015;
+                this.rotationVelocity.x -= deltaX * sensitivity;
+                this.rotationVelocity.y -= deltaY * sensitivity;
+
+                this.lastTouchX = touch.clientX;
+                this.lastTouchY = touch.clientY;
+            }
         }
-        this.lastTouch.set(touch.clientX, touch.clientY);
     };
 
     this._onTouchEnd = (e) => {
-        const touchDuration = Date.now() - this.touchStartTime;
-        if (!this.isDragging && touchDuration < 250) {
-            // Tap Detected: Acquire Target (Raycast)
-            const rect = element.getBoundingClientRect();
-            this.mouse.x = ((this.touchStartPos.x - rect.left) / rect.width) * 2 - 1;
-            this.mouse.y = -((this.touchStartPos.y - rect.top) / rect.height) * 2 + 1;
-            this.raycastTarget();
-        } else if (!this.isDragging && touchDuration >= 250) {
-            // Long Press or deliberate tap to shoot
-            this.handleMouseDown(e);
-            setTimeout(() => this.handleMouseUp(e), 50);
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            const type = this.activeTouches[touch.identifier];
+
+            if (type === 'charge') {
+                // Release Arrow
+                if (this.drawPower > 0.2) { // Minimum power to shoot
+                    this.shoot();
+                } else {
+                    this.cancel(); // Cancel if just a tap or low power
+                }
+                this.isDrawn = false;
+            }
+            
+            delete this.activeTouches[touch.identifier];
         }
-        this.handleMouseUp(e);
     };
 
     element.addEventListener('touchstart', this._onTouchStart, { passive: false });
     element.addEventListener('touchmove', this._onTouchMove, { passive: false });
     element.addEventListener('touchend', this._onTouchEnd, { passive: false });
 
-    // Keyboard
+    // Keyboard (Keep existing)
     this.keys = {};
     this._onKeyDown = (e) => {
         this.keys[e.code] = true;
@@ -543,7 +604,7 @@ class BowSystem3D {
             if (!this.isScoped && !this.isDrawn && !this.isTracking) this.handleMouseDown(e);
             else if (this.isScoped) this.shoot();
         }
-        if (e.code === 'Escape' && (this.isDrawn || this.isScoped)) this.cancel();
+        if (e.code === 'Escape') this.cancel();
     };
     this._onKeyUp = (e) => {
         this.keys[e.code] = false;
@@ -555,13 +616,14 @@ class BowSystem3D {
     window.addEventListener('keyup', this._onKeyUp);
   }
 
+  // ... (Keep existing helpers like raycastTarget, cycleZoom, setZoomIndex, applyZoom)
+  
   raycastTarget() {
+      // ... (Same as before)
       this.raycaster.setFromCamera(this.mouse, this.game.camera);
       const birds = this.game.birdSystem.birds.map(b => b.mesh);
       const intersects = this.raycaster.intersectObjects(birds, true);
-      
       if (intersects.length > 0) {
-          // Found a bird! Rotate camera to look at it
           let targetObj = intersects[0].object;
           while(targetObj.parent && !targetObj.serverId) {
               if (targetObj.parent.serverId) { targetObj = targetObj.parent; break; }
@@ -595,27 +657,21 @@ class BowSystem3D {
   toggleScope() {
       if (this.isTracking) return;
       this.isScoped = !this.isScoped;
-      
       const element = this.game.container;
 
       if (this.isScoped) {
           this.game.audio.play('scope');
           this.game.haptics.trigger('scope_enter');
           this.scopeCrosshair.visible = true;
-          this.defaultCrosshair.visible = false;
           this.targetZoom = this.zoomSteps[this.zoomIndex];
           
           if (element.requestPointerLock) element.requestPointerLock();
-
           if (this.game.onScopeEnter) this.game.onScopeEnter();
       } else {
           this.scopeCrosshair.visible = false;
-          this.defaultCrosshair.visible = true;
           this.targetZoom = 1;
           this.currentZoom = 1;
-
           if (document.pointerLockElement === element) document.exitPointerLock();
-
           if (this.game.onScopeExit) this.game.onScopeExit();
       }
       this.applyZoom();
@@ -642,7 +698,6 @@ class BowSystem3D {
       this.isNocked = false;
       this.drawPower = 0;
       this.scopeCrosshair.visible = false;
-      this.defaultCrosshair.visible = true;
       this.targetZoom = 1;
       this.currentZoom = 1;
       this.applyZoom();
@@ -679,27 +734,27 @@ class BowSystem3D {
     }
   }
 
-  handleMouseMove(e) {
-      if (!this.isTracking && this.isRightClickDown) {
-         const movementX = e.movementX || 0;
-         const movementY = e.movementY || 0;
-         const sensitivity = this.isScoped ? 0.001 : 0.002;
-         
-         this.game.camera.rotation.y -= movementX * sensitivity;
-         this.game.camera.rotation.x -= movementY * sensitivity;
-         this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.4, this.game.camera.rotation.x));
-         this.game.camera.rotation.order = 'YXZ';
-      }
-  }
-
   update(deltaTime) {
-      // Smooth Zoom Lerp
+      // 1. Apply Smooth Camera Velocity
+      this.game.camera.rotation.y += this.rotationVelocity.x;
+      this.game.camera.rotation.x += this.rotationVelocity.y;
+      
+      // Damping (Friction)
+      this.rotationVelocity.multiplyScalar(this.damping);
+
+      // Clamp Pitch (-80 to +80 degrees = -1.396 to +1.396 radians)
+      this.game.camera.rotation.x = Math.max(-1.396, Math.min(1.396, this.game.camera.rotation.x));
+      this.game.camera.rotation.order = 'YXZ';
+
+      // 2. Smooth Zoom
       if (Math.abs(this.currentZoom - this.targetZoom) > 0.01) {
           this.currentZoom = THREE.MathUtils.lerp(this.currentZoom, this.targetZoom, deltaTime * 8);
           this.applyZoom();
       }
 
-      if (this.isDrawn) {
+      // 3. Draw Animation (for Mouse Hold, Touch uses direct power)
+      // If using mouse hold (time-based)
+      if (this.isDrawn && Object.keys(this.activeTouches).length === 0) {
           const elapsed = Date.now() - this.drawStartTime;
           this.drawPower = Math.min(elapsed / this.maxDrawTime, 1);
           this.updateBowString(this.drawPower);
@@ -750,6 +805,11 @@ class BowSystem3D {
       const launchVelocity = direction.multiplyScalar(baseSpeed * this.drawPower);
       arrowBody.velocity.set(launchVelocity.x, launchVelocity.y, launchVelocity.z);
       
+      // Add Spin for Physics Stability (Rifling effect)
+      arrowBody.angularVelocity.set(0, 0, 10); // Spin around Z axis relative to arrow? 
+      // Actually global Z, but arrow aligns to velocity. 
+      // Physics-based rotation in Arrow.js will align it visually.
+
       arrowBody.addEventListener('collide', (event) => {
           if (flyingArrow.isActive) {
               flyingArrow.isActive = false;
@@ -781,7 +841,6 @@ class BowSystem3D {
       this.isTracking = false;
       if (!this.isScoped) {
           this.scopeCrosshair.visible = false;
-          this.defaultCrosshair.visible = true;
           this.targetZoom = 1;
           this.currentZoom = 1;
           this.applyZoom();
@@ -794,11 +853,11 @@ class BowSystem3D {
       const element = this.game.container;
       element.removeEventListener('mousedown', this._onMouseDown);
       element.removeEventListener('mouseup', this._onMouseUp);
-      element.removeEventListener('wheel', this._onWheel);
+      // element.removeEventListener('wheel', this._onWheel); // Removed wheel for now or keep it?
       element.removeEventListener('touchstart', this._onTouchStart);
       element.removeEventListener('touchend', this._onTouchEnd);
       element.removeEventListener('touchmove', this._onTouchMove);
-      window.removeEventListener('mousemove', this._onMouseMove);
+      document.removeEventListener('mousemove', this._onMouseMove);
       window.removeEventListener('keydown', this._onKeyDown);
       window.removeEventListener('keyup', this._onKeyUp);
   }
@@ -850,6 +909,7 @@ class HuntingGame3D {
     this.activeArrows = [];
     this.particles = [];
     this.aimVector = new THREE.Vector2(0, 0); // For smooth joystick aiming
+    this.isMobile = window.innerWidth < 768; // Detect Mobile
     
     this.initThree();
     this.initPhysics();
@@ -886,11 +946,17 @@ class HuntingGame3D {
     this.camera.position.set(0, 1.7, 0); // Correct Hunter Eye Level
     this.camera.rotation.order = 'YXZ';
     
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    this.renderer = new THREE.WebGLRenderer({ antialias: !this.isMobile, powerPreference: "high-performance" });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // More compatible filtering
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.isMobile ? 1.5 : 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.5;
+    
+    this.renderer.shadowMap.enabled = !this.isMobile;
+    if (!this.isMobile) {
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
     this.container.appendChild(this.renderer.domElement);
     
     // Lighting
@@ -899,7 +965,11 @@ class HuntingGame3D {
     
     const sun = new THREE.DirectionalLight(0xffffff, 1);
     sun.position.set(50, 100, 50);
-    sun.castShadow = true;
+    if (!this.isMobile) {
+        sun.castShadow = true;
+        sun.shadow.mapSize.width = 1024;
+        sun.shadow.mapSize.height = 1024;
+    }
     this.scene.add(sun);
   }
 
@@ -907,82 +977,169 @@ class HuntingGame3D {
       this.world = new CANNON.World();
       this.world.gravity.set(0, -15.0, 0); 
       this.world.broadphase = new CANNON.NaiveBroadphase();
-      this.world.solver.iterations = 10;
+      this.world.solver.iterations = this.isMobile ? 5 : 10;
       this.world.defaultContactMaterial.friction = 0.5;
   }
 
   initEnvironment() {
-      const textureLoader = new THREE.TextureLoader();
-      const basename = window.location.hostname.includes('github.io') ? window.location.pathname.split('/')[1] ? `/${window.location.pathname.split('/')[1]}` : '' : '';
-      
-      // Determine theme based on gameData.level
+      this.initSky();
+      this.initGround();
+      this.initVegetation();
+      this.initClouds();
+      this.initLighting();
+  }
+
+  initSky() {
+      this.sky = new Sky();
+      this.sky.scale.setScalar(450000);
+      this.scene.add(this.sky);
+
+      this.sun = new THREE.Vector3();
+
+      // Dynamic Level-based Themes
       const level = this.gameData?.level || 1;
-      const theme = ENVIRONMENT_THEMES[level] || ENVIRONMENT_THEMES[1];
+      const themeConfigs = {
+          1: { turbidity: 10, rayleigh: 3, mieCoefficient: 0.005, mieDirectionalG: 0.7, elevation: 20, azimuth: 180, fog: 0x87CEEB }, // Day
+          2: { turbidity: 20, rayleigh: 4, mieCoefficient: 0.01, mieDirectionalG: 0.8, elevation: 5, azimuth: 190, fog: 0xffa500 }, // Sunset
+          3: { turbidity: 0.5, rayleigh: 0.1, mieCoefficient: 0.001, mieDirectionalG: 0.9, elevation: -2, azimuth: 180, fog: 0x0f212e }, // Night
+          4: { turbidity: 5, rayleigh: 10, mieCoefficient: 0.002, mieDirectionalG: 0.5, elevation: 45, azimuth: 180, fog: 0x6a1b9a }  // Mystic
+      };
+      const config = themeConfigs[level] || themeConfigs[1];
 
-      // Update Fog and Scene background
-      this.scene.fog.color.setHex(theme.fog);
-      
-      // 360 Degree Looping Background (Skydome)
-      const bgTex = textureLoader.load(`${basename}/assets/environment/${theme.sky}`, (tex) => {
-          tex.wrapS = THREE.RepeatWrapping;
-          tex.repeat.set(5, 1); 
-          tex.colorSpace = THREE.SRGBColorSpace;
-      });
-      const skyGeo = new THREE.SphereGeometry(800, 32, 32);
-      const skyMat = new THREE.MeshBasicMaterial({ 
-          map: bgTex, 
-          side: THREE.BackSide,
-          fog: false 
-      });
-      const skydome = new THREE.Mesh(skyGeo, skyMat);
-      this.scene.add(skydome);
+      const uniforms = this.sky.material.uniforms;
+      uniforms['turbidity'].value = config.turbidity;
+      uniforms['rayleigh'].value = config.rayleigh;
+      uniforms['mieCoefficient'].value = config.mieCoefficient;
+      uniforms['mieDirectionalG'].value = config.mieDirectionalG;
 
-      // Ground
-      const groundGeo = new THREE.PlaneGeometry(2000, 2000);
-      const groundTex = textureLoader.load(`${basename}/assets/environment/${theme.ground}`, (tex) => {
-          tex.wrapS = THREE.RepeatWrapping;
-          tex.wrapT = THREE.RepeatWrapping;
-          tex.repeat.set(200, 200);
-          tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-      });
+      const phi = THREE.MathUtils.degToRad(90 - config.elevation);
+      const theta = THREE.MathUtils.degToRad(config.azimuth);
+
+      this.sun.setFromSphericalCoords(1, phi, theta);
+      uniforms['sunPosition'].value.copy(this.sun);
       
+      this.scene.fog.color.setHex(config.fog);
+  }
+
+  initGround() {
+      const level = this.gameData?.level || 1;
+      const groundColors = {
+          1: 0x2b4a1b, // Green
+          2: 0x5d4037, // Brown
+          3: 0x1a2c38, // Deep Blue
+          4: 0x4a148c  // Purple
+      };
       const groundMat = new THREE.MeshStandardMaterial({ 
-          map: groundTex, 
-          roughness: 0.8,
-          metalness: 0.1,
-          color: theme.groundColor 
+          color: groundColors[level] || groundColors[1], 
+          roughness: 0.9,
+          metalness: 0.1
       });
+      const groundGeo = new THREE.PlaneGeometry(2000, 2000);
       const ground = new THREE.Mesh(groundGeo, groundMat);
       ground.rotation.x = -Math.PI / 2;
-      ground.position.y = 0;
-      ground.receiveShadow = true;
+      ground.receiveShadow = !this.isMobile;
       this.scene.add(ground);
       
-      // Physics ground
       const groundBody = new CANNON.Body({ mass: 0 });
       groundBody.addShape(new CANNON.Plane());
       groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
       this.world.addBody(groundBody);
+  }
 
-      // Trees (Simple Cylinders/Cones)
-      for(let i=0; i<30; i++) {
-          const x = (Math.random() - 0.5) * 200;
-          const z = (Math.random() - 0.5) * 200 - 50;
-          
-          const trunk = new THREE.Mesh(
-              new THREE.CylinderGeometry(0.5, 0.8, 3),
-              new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 })
-          );
-          trunk.position.set(x, 1.5, z);
-          this.scene.add(trunk);
-          
-          const leaves = new THREE.Mesh(
-              new THREE.ConeGeometry(3, 6),
-              new THREE.MeshStandardMaterial({ color: 0x228B22, roughness: 0.8 })
-          );
-          leaves.position.set(x, 5, z);
-          this.scene.add(leaves);
+  initVegetation() {
+      const instanceCount = this.isMobile ? 1500 : 5000;
+      
+      const bladeGeo = new THREE.PlaneGeometry(0.5, 1);
+      bladeGeo.translate(0, 0.5, 0); 
+      const bladeMat = new THREE.MeshStandardMaterial({
+          color: 0x4caf50,
+          side: THREE.DoubleSide,
+          transparent: true
+      });
+      this.grassMesh = new THREE.InstancedMesh(bladeGeo, bladeMat, instanceCount);
+      
+      const flowerTex = createFlowerTexture('#ffeb3b');
+      const flowerGeo = new THREE.PlaneGeometry(0.5, 0.5);
+      flowerGeo.translate(0, 0.4, 0);
+      const flowerMat = new THREE.MeshBasicMaterial({
+          map: flowerTex,
+          transparent: true,
+          side: THREE.DoubleSide,
+          alphaTest: 0.5
+      });
+      this.flowerMesh = new THREE.InstancedMesh(flowerGeo, flowerMat, Math.floor(instanceCount / 5));
+
+      const dummy = new THREE.Object3D();
+      
+      for (let i = 0; i < instanceCount; i++) {
+          const r = 20 + Math.random() * 80; 
+          const theta = Math.random() * Math.PI * 2;
+          dummy.position.set(Math.cos(theta) * r, 0, Math.sin(theta) * r);
+          dummy.rotation.y = Math.random() * Math.PI;
+          dummy.scale.setScalar(0.8 + Math.random() * 0.5);
+          dummy.updateMatrix();
+          this.grassMesh.setMatrixAt(i, dummy.matrix);
       }
+      
+      for (let i = 0; i < Math.floor(instanceCount / 5); i++) {
+          const r = 25 + Math.random() * 70;
+          const theta = Math.random() * Math.PI * 2;
+          dummy.position.set(Math.cos(theta) * r, 0, Math.sin(theta) * r);
+          dummy.rotation.set(0, Math.random() * Math.PI, 0);
+          dummy.scale.setScalar(0.6 + Math.random() * 0.4);
+          dummy.updateMatrix();
+          this.flowerMesh.setMatrixAt(i, dummy.matrix);
+      }
+
+      this.scene.add(this.grassMesh);
+      this.scene.add(this.flowerMesh);
+  }
+
+  initClouds() {
+      this.clouds = [];
+      const cloudTex = createCloudTexture();
+      const cloudMat = new THREE.SpriteMaterial({ 
+          map: cloudTex, 
+          transparent: true, 
+          opacity: 0.7,
+          color: 0xffffff
+      });
+
+      const cloudCount = this.isMobile ? 10 : 20;
+      for (let i = 0; i < cloudCount; i++) {
+          const cloud = new THREE.Sprite(cloudMat.clone());
+          cloud.scale.set(100, 60, 1);
+          cloud.position.set(
+              (Math.random() - 0.5) * 800,
+              100 + Math.random() * 50,
+              (Math.random() - 0.5) * 800
+          );
+          this.scene.add(cloud);
+          this.clouds.push({
+              mesh: cloud,
+              speed: 0.5 + Math.random() * 1.5
+          });
+      }
+  }
+
+  initLighting() {
+      const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+      hemiLight.position.set(0, 20, 0);
+      this.scene.add(hemiLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      if (this.sun) {
+          dirLight.position.copy(this.sun).multiplyScalar(100);
+      } else {
+          dirLight.position.set(50, 100, 50);
+      }
+      
+      if (!this.isMobile) {
+          dirLight.castShadow = true;
+          dirLight.shadow.mapSize.width = 1024;
+          dirLight.shadow.mapSize.height = 1024;
+      }
+      this.scene.add(dirLight);
   }
 
   onWindowResize() {
@@ -1001,37 +1158,32 @@ class HuntingGame3D {
       const deltaTime = (currentTime - this.lastTime) / 1000;
       this.lastTime = currentTime;
 
-      // Physics step
       this.world.step(1/60);
       
-      // --- Centralized Aiming System (Smooth & Clamped) ---
+      if (this.clouds) {
+          this.clouds.forEach(c => {
+              c.mesh.position.x += c.speed * deltaTime;
+              if (c.mesh.position.x > 400) c.mesh.position.x = -400;
+          });
+      }
+
       if (!this.bowSystem.isTracking) {
           const aimSpeed = 2.0 * deltaTime; 
-          
           if (this.bowSystem.keys['KeyW'] || this.bowSystem.keys['ArrowUp']) this.camera.rotation.x += aimSpeed;
           if (this.bowSystem.keys['KeyS'] || this.bowSystem.keys['ArrowDown']) this.camera.rotation.x -= aimSpeed;
           if (this.bowSystem.keys['KeyA'] || this.bowSystem.keys['ArrowLeft']) this.camera.rotation.y += aimSpeed;
           if (this.bowSystem.keys['KeyD'] || this.bowSystem.keys['ArrowRight']) this.camera.rotation.y -= aimSpeed;
 
-          if (this.aimVector.lengthSq() > 0.001) {
-              this.camera.rotation.y -= this.aimVector.x * aimSpeed * 2.5;
-              this.camera.rotation.x += this.aimVector.y * aimSpeed * 2.5;
-          }
-
           this.camera.rotation.x = Math.max(-1.45, Math.min(1.45, this.camera.rotation.x));
           this.camera.rotation.order = 'YXZ';
       } else if (this.activeTrackingArrow) {
-          // --- Arrow Tracking (Scoped View Extension) ---
           const arrowPos = this.activeTrackingArrow.mesh.position;
-          
-          // Smoothly look at the arrow as it flies
           const targetRotation = new THREE.Quaternion();
           const m = new THREE.Matrix4();
           m.lookAt(this.camera.position, arrowPos, new THREE.Vector3(0,1,0));
           targetRotation.setFromRotationMatrix(m);
           this.camera.quaternion.slerp(targetRotation, 0.1);
 
-          // Once arrow hits, wait before returning
           if (!this.activeTrackingArrow.isActive) {
               if (!this.shotFinishTime) this.shotFinishTime = Date.now();
               if (Date.now() - this.shotFinishTime > 1500) {
@@ -1042,17 +1194,14 @@ class HuntingGame3D {
           }
       }
 
-      // Update Systems
       this.bowSystem.update(deltaTime);
       this.birdSystem.updateFlock(deltaTime);
       this.physiology.update(deltaTime);
 
-      // Report draw power to React
       if (this.onDrawUpdate) {
           this.onDrawUpdate(this.bowSystem.drawPower);
       }
 
-      // Update particles
       for (let i = this.particles.length - 1; i >= 0; i--) {
           const p = this.particles[i];
           p.life -= deltaTime; 
@@ -1065,14 +1214,12 @@ class HuntingGame3D {
           p.mesh.material.opacity = p.life;
       }
       
-      // Update arrows and check collisions
       const arrows = this.bowSystem.arrows;
       for (let i = arrows.length - 1; i >= 0; i--) {
           const arrow = arrows[i];
           arrow.update(deltaTime);
           
           if (!arrow.isActive) {
-              // Stay in world for 5 seconds then disappear
               if (!arrow.dyingTime) arrow.dyingTime = Date.now();
               if (Date.now() - arrow.dyingTime > 5000) {
                   this.scene.remove(arrow.mesh);
@@ -1083,12 +1230,10 @@ class HuntingGame3D {
               continue;
           }
 
-          // Collision Check
           this.birdSystem.birds.forEach(bird => {
               if (bird.active && !bird.isDying) {
                   const dist = arrow.mesh.position.distanceTo(bird.mesh.position);
                   if (dist < bird.type.size + 0.5) {
-                      // HIT!
                       bird.isDying = true;
                       bird.deathVelocity = arrow.body.velocity.clone().scale(0.1);
                       this.onScore(bird.type.points);
@@ -1104,13 +1249,11 @@ class HuntingGame3D {
                               power: this.drawPower,
                               hit: true,
                               birdId: bird.serverId,
-                              // Project 3D impact back to 0-100 for server
                               x: (bird.mesh.position.x + 50),
                               y: (bird.mesh.position.y - 10)
                           });
                       }
 
-                      // Arrow sticks into bird
                       arrow.isActive = false;
                       this.world.removeBody(arrow.body);
                       bird.mesh.add(arrow.mesh);
@@ -1120,11 +1263,10 @@ class HuntingGame3D {
           });
       }
 
-      // Special death animation update for birds
       this.birdSystem.birds.forEach(bird => {
           if (bird.isDying) {
-              bird.mesh.position.y -= deltaTime * 15; // Fall
-              bird.mesh.rotation.x += deltaTime * 10; // Spin
+              bird.mesh.position.y -= deltaTime * 15; 
+              bird.mesh.rotation.x += deltaTime * 10; 
               if (bird.mesh.position.y < -1) {
                   bird.active = false;
                   this.scene.remove(bird.mesh);
@@ -1144,32 +1286,6 @@ class HuntingGame3D {
   }
 }
 
-const Joystick = ({ onMove }) => {
-    const joystickRef = useRef(null);
-    const [position, setPosition] = useState({ x: 0, y: 0 });
-
-    const handleDrag = (event, info) => {
-        const x = info.offset.x;
-        const y = info.offset.y;
-        setPosition({ x, y });
-        onMove({ x: x / 50, y: -y / 50 });
-    };
-
-    return (
-        <div className="relative w-32 h-32 bg-white/10 rounded-full border-2 border-white/20 backdrop-blur-md flex items-center justify-center">
-            <motion.div
-                drag
-                dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-                dragElastic={1}
-                onDrag={handleDrag}
-                onDragEnd={() => { setPosition({ x: 0, y: 0 }); onMove({ x: 0, y: 0 }); }}
-                className="w-12 h-12 bg-yellow-500 rounded-full shadow-2xl cursor-pointer"
-                animate={position}
-            />
-        </div>
-    );
-};
-
 // --- React Component ---
 
 const BirdShooting = () => {
@@ -1177,6 +1293,18 @@ const BirdShooting = () => {
   const navigate = useNavigate();
   const [gameState, setGameState] = useState('lobby');
   const [selectedLevel, setSelectedLevel] = useState(1);
+  const [isLandscape, setIsLandscape] = useState(true);
+  
+  // Orientation Check
+  useEffect(() => {
+      const checkOrientation = () => {
+          setIsLandscape(window.innerWidth > window.innerHeight);
+      };
+      window.addEventListener('resize', checkOrientation);
+      checkOrientation();
+      return () => window.removeEventListener('resize', checkOrientation);
+  }, []);
+
   const [matchData, setMatchData] = useState(null);
   const [finalResult, setFinalResult] = useState(null);
   const [currentScore, setCurrentScore] = useState(0);
@@ -1239,6 +1367,9 @@ const BirdShooting = () => {
     const handleShotResult = (res) => {
         if (res.remainingAmmo !== undefined) {
             setRemainingAmmo(res.remainingAmmo);
+        }
+        if (res.score !== undefined) {
+            setCurrentScore(res.score);
         }
     };
 
@@ -1422,7 +1553,7 @@ const BirdShooting = () => {
   }, [gameState]);
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-white p-4 font-sans select-none relative overflow-hidden">
+    <div className="min-h-screen bg-[#0d1117] text-white p-4 font-sans select-none relative">
       <style>{`
         @media (max-width: 768px) {
           .game-hud { font-size: 0.7rem; gap: 0.5rem !important; padding: 0.5rem !important; }
@@ -1460,7 +1591,7 @@ const BirdShooting = () => {
         
         {/* Lobby State */}
         {gameState === 'lobby' && (
-          <div className="flex flex-col items-center justify-center py-12">
+          <div className="flex flex-col items-center justify-center py-6 md:py-12">
             <motion.div initial={{opacity:0}} animate={{opacity:1}} className="text-center space-y-8">
                 <div className="relative inline-block">
                     <div className="w-24 h-24 bg-[#3bc117]/10 rounded-full flex items-center justify-center mx-auto border border-[#3bc117]/50 shadow-[0_0_50px_rgba(59,193,23,0.3)]">
@@ -1593,7 +1724,7 @@ const BirdShooting = () => {
                 <button 
                     onClick={startNewMatch}
                     disabled={loading}
-                    className="bg-[#3bc117] hover:bg-[#32a814] text-black text-xl font-black py-6 px-16 rounded-full transition-all hover:scale-105 shadow-[0_0_30px_rgba(59,193,23,0.4)]"
+                    className="bg-[#3bc117] hover:bg-[#32a814] text-black text-lg md:text-xl font-black py-4 px-10 md:py-6 md:px-16 rounded-full transition-all hover:scale-105 shadow-[0_0_30px_rgba(59,193,23,0.4)]"
                 >
                     {loading ? 'INITIALIZING...' : 'ENTER HUNT'}
                 </button>
@@ -1612,22 +1743,22 @@ const BirdShooting = () => {
           <div className="fixed inset-0 z-[100] bg-black">
             {/* HUD */}
             <div className="absolute top-4 left-2 right-2 flex justify-between items-start z-40 pointer-events-none game-hud">
-                <div className="flex gap-1 md:gap-4">
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl">
-                        <p className="text-[7px] md:text-[10px] text-gray-400 font-bold uppercase hud-label">Points</p>
-                        <p className="text-sm md:text-4xl font-black text-[#3bc117] hud-value">{currentScore}</p>
+                <div className="flex gap-1.5 md:gap-4">
+                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
+                        <p className="text-[6px] md:text-[9px] text-gray-400 font-black uppercase hud-label tracking-tighter">Points</p>
+                        <p className="text-sm md:text-4xl font-black text-[#3bc117] hud-value leading-none">{currentScore}</p>
                     </div>
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl">
-                        <p className="text-[7px] md:text-[10px] text-gray-400 font-bold uppercase hud-label">Arrows</p>
-                        <p className="text-sm md:text-4xl font-black text-white hud-value">{remainingAmmo}</p>
+                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
+                        <p className="text-[6px] md:text-[9px] text-gray-400 font-black uppercase hud-label tracking-tighter">Arrows</p>
+                        <p className="text-sm md:text-4xl font-black text-white hud-value leading-none">{remainingAmmo}</p>
                     </div>
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl">
-                        <p className="text-[7px] md:text-[10px] text-orange-500 font-bold uppercase hud-label">TRX</p>
-                        <p className="text-sm md:text-2xl font-black text-white hud-value">{sessionCharged.toFixed(1)}</p>
+                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
+                        <p className="text-[6px] md:text-[9px] text-orange-500 font-black uppercase hud-label tracking-tighter">Balance</p>
+                        <p className="text-xs md:text-2xl font-black text-white hud-value leading-none">{sessionCharged.toFixed(1)}</p>
                     </div>
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl">
-                        <p className="text-[7px] md:text-[10px] text-yellow-500 font-bold uppercase hud-label">Zoom</p>
-                        <p className="text-sm md:text-2xl font-black text-white hud-value">{Math.round(zoomMultiplier)}x</p>
+                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
+                        <p className="text-[6px] md:text-[9px] text-yellow-500 font-black uppercase hud-label tracking-tighter">Zoom</p>
+                        <p className="text-xs md:text-2xl font-black text-white hud-value leading-none">{Math.round(zoomMultiplier)}x</p>
                     </div>
                 </div>
 
@@ -1641,8 +1772,20 @@ const BirdShooting = () => {
                 </div>
             </div>
 
-            {/* Static Tiny Crosshair (Draw Only) - REMOVED per user request to use 3D crosshair only */}
-
+            {/* Pro 2D Crosshair (Always Visible when not Scoped) */}
+            {!isScoped && (
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-40 scale-75 md:scale-100">
+                    <div className="relative flex items-center justify-center">
+                         {/* Circle */}
+                         <div className="w-10 h-10 border border-black/30 rounded-full"></div>
+                         {/* Cross lines */}
+                         <div className="w-[1px] h-6 bg-black absolute opacity-80"></div>
+                         <div className="w-6 h-[1px] bg-black absolute opacity-80"></div>
+                         {/* Center Dot */}
+                         <div className="w-1 h-1 bg-black rounded-full shadow-[0_0_5px_rgba(0,0,0,0.5)]"></div>
+                    </div>
+                </div>
+            )}
 
             {/* Vertical Zoom Bar (Right) - Discrete Steps */}
             <AnimatePresence>
@@ -1658,15 +1801,11 @@ const BirdShooting = () => {
                                 <button
                                     key={z}
                                     onClick={() => handleSetZoomIndex(3-i)}
-                                    className={`w-12 h-12 rounded-xl font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black shadow-[0_0_20px_rgba(59,193,23,0.4)]' : 'bg-black/40 text-gray-400 hover:text-white'}`}
+                                    className={`w-10 h-10 md:w-12 md:h-12 rounded-xl font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black shadow-[0_0_20px_rgba(59,193,23,0.4)]' : 'bg-black/40 text-gray-400 hover:text-white'}`}
                                 >
                                     {z}x
                                 </button>
                             ))}
-                        </div>
-                        <div className="text-center bg-black/60 p-2 rounded-xl">
-                            <p className="text-[8px] font-black text-white uppercase tracking-widest">Zoom</p>
-                            <p className="text-lg font-black text-yellow-500">{Math.round(zoomMultiplier)}x</p>
                         </div>
                     </motion.div>
                 )}
@@ -1695,26 +1834,25 @@ const BirdShooting = () => {
                         initial={{ opacity: 0, x: -50 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -50 }}
-                        className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
+                        className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
                     >
-                        <div className="h-80 w-6 bg-black/60 rounded-full border-2 border-white/20 p-1.5 relative overflow-hidden backdrop-blur-md">
+                        <div className="h-60 md:h-80 w-4 md:w-6 bg-black/60 rounded-full border border-white/20 p-1 relative overflow-hidden backdrop-blur-md shadow-2xl">
                             <motion.div 
                                 className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-red-600 via-yellow-500 to-green-400 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
-                                initial={{ height: 0 }}
-                                animate={{ height: `${drawPower * 100}%` }}
-                                transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+                                style={{ height: `${drawPower * 100}%` }}
+                                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                             />
-                            {drawPower > 0.9 && (
+                            {drawPower > 0.95 && (
                                 <motion.div 
                                     animate={{ opacity: [0.2, 0.8, 0.2] }}
-                                    transition={{ repeat: Infinity, duration: 0.4 }}
+                                    transition={{ repeat: Infinity, duration: 0.2 }}
                                     className="absolute inset-0 bg-white"
                                 />
                             )}
                         </div>
                         <div className="text-center">
-                            <p className="text-[10px] font-black text-white uppercase tracking-widest">Tension</p>
-                            <p className={`text-2xl font-black italic tracking-tighter ${drawPower > 0.9 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                            <p className="text-[8px] md:text-[10px] font-black text-white uppercase tracking-widest">Tension</p>
+                            <p className={`text-xl md:text-2xl font-black italic tracking-tighter ${drawPower > 0.9 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
                                 {Math.round(drawPower * 100)}%
                             </p>
                         </div>
@@ -1724,11 +1862,6 @@ const BirdShooting = () => {
 
             {/* Controls Overlay */}
             <div className="absolute bottom-6 left-6 md:bottom-10 md:left-10 z-30 pointer-events-auto flex items-end gap-4 md:gap-8 action-buttons">
-                {/* Virtual Joystick */}
-                <div className="joystick-container">
-                    <Joystick onMove={handleJoystickMove} />
-                </div>
-                
                 {/* Manual Scope Toggle */}
                 {!isTracking && (
                     <button 
@@ -1765,7 +1898,6 @@ const BirdShooting = () => {
                                     </div>
                                 );
                             })}
-                            {/* Spin Credits */}
                             {['BRONZE', 'SILVER', 'GOLD', 'DIAMOND'].map(tier => (
                                 <div key={tier} className="bg-black/40 border border-gray-800 p-3 rounded-2xl flex flex-col items-center gap-1">
                                     <RotateCw className="w-4 h-4 text-yellow-500" />
@@ -1773,7 +1905,6 @@ const BirdShooting = () => {
                                     <p className="text-sm font-black text-white">{wallet.spinCredits?.[tier] || 0}</p>
                                 </div>
                             ))}
-                            {/* Balance */}
                             <div className="bg-black/40 border border-[#3bc117]/30 p-3 rounded-2xl flex flex-col items-center gap-1">
                                 <Coins className="w-4 h-4 text-[#3bc117]" />
                                 <p className="text-[8px] font-black text-gray-500 uppercase">Balance</p>
@@ -1797,31 +1928,28 @@ const BirdShooting = () => {
                     <div className="w-full h-full border-[50px] border-black/80 rounded-full absolute inset-0 mix-blend-multiply"></div>
                     
                     <div className="absolute bottom-10 right-10 flex flex-col gap-4 pointer-events-auto">
-                        {/* Charge / Fire Button */}
                         <button 
                             onMouseDown={(e) => { e.stopPropagation(); handleLoad(); }}
                             onMouseUp={(e) => { e.stopPropagation(); handleShoot(); }}
                             onTouchStart={(e) => { e.stopPropagation(); handleLoad(); }}
                             onTouchEnd={(e) => { e.stopPropagation(); handleShoot(); }}
-                            className="w-24 h-24 bg-orange-600 rounded-full border-4 border-orange-400 shadow-[0_0_50px_rgba(255,165,0,0.5)] active:scale-95 transition-transform flex flex-col items-center justify-center font-black text-[10px]"
+                            className="w-20 h-20 md:w-24 md:h-24 bg-orange-600 rounded-full border-4 border-orange-400 shadow-[0_0_50px_rgba(255,165,0,0.5)] active:scale-95 transition-transform flex flex-col items-center justify-center font-black text-[10px] charge-btn"
                         >
                             <Zap className="w-6 h-6 mb-1" />
                             {drawPower > 0 ? `${Math.round(drawPower * 100)}%` : 'CHARGE'}
                         </button>
 
                         <div className="flex gap-4">
-                            {/* Cancel Button */}
                             <button 
                                 onMouseDown={(e) => { e.stopPropagation(); handleCancel(); }}
-                                className="w-20 h-20 bg-gray-800 rounded-full border-4 border-gray-600 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-gray-400"
+                                className="w-16 h-16 md:w-20 md:h-20 bg-gray-800 rounded-full border-4 border-gray-600 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-gray-400 cancel-btn"
                             >
                                 CANCEL
                             </button>
 
-                            {/* Unscope Button */}
                             <button 
                                 onMouseDown={(e) => { e.stopPropagation(); handleToggleScope(); }}
-                                className="w-20 h-20 bg-[#3bc117] rounded-full border-4 border-[#3bc117]/50 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-black"
+                                className="w-16 h-16 md:w-20 md:h-20 bg-[#3bc117] rounded-full border-4 border-[#3bc117]/50 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-black exit-btn"
                             >
                                 EXIT
                             </button>
@@ -1831,14 +1959,35 @@ const BirdShooting = () => {
             )}
             </AnimatePresence>
             
+            {/* Optimized Loading Overlay */}
+            <AnimatePresence>
+                {loading && (
+                    <motion.div 
+                        initial={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[200] bg-[#0d1117] flex flex-col items-center justify-center"
+                    >
+                        <div className="w-64 h-1 bg-gray-800 rounded-full overflow-hidden mb-4">
+                            <motion.div 
+                                className="h-full bg-[#3bc117]"
+                                initial={{ width: "0%" }}
+                                animate={{ width: "100%" }}
+                                transition={{ duration: 2, ease: "easeInOut" }}
+                            />
+                        </div>
+                        <p className="text-[#3bc117] font-black text-[10px] tracking-[0.3em] animate-pulse">OPTIMIZING ASSETS...</p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Game Container */}
             <div 
                 ref={gameContainerRef} 
                 className="w-screen h-screen bg-black overflow-hidden shadow-2xl relative cursor-crosshair touch-none"
             >
-                {/* Instruction Overlay if needed */}
+                {/* Instruction Overlay */}
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-[10px] font-black pointer-events-none text-center uppercase tracking-widest bg-black/20 px-6 py-2 rounded-full backdrop-blur-sm">
-                    HOLD TO DRAW • RELEASE TO AIM • SPACE OR FIRE BUTTON TO SHOOT • ESC OR CANCEL BUTTON TO STOP
+                    DRAG LEFT TO DRAW • DRAG RIGHT TO AIM • RELEASE TO SHOOT
                 </div>
             </div>
           </div>
@@ -1872,6 +2021,22 @@ const BirdShooting = () => {
                     </button>
                 </motion.div>
             </motion.div>
+            )}
+        </AnimatePresence>
+
+        {/* Orientation Warning Overlay */}
+        <AnimatePresence>
+            {!isLandscape && gameState === 'playing' && (
+                <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[300] bg-[#0d1117] flex flex-col items-center justify-center p-10 text-center"
+                >
+                    <RotateCw className="w-16 h-16 text-[#3bc117] animate-spin mb-6" />
+                    <h2 className="text-2xl font-black uppercase tracking-tighter mb-2">Landscape Recommended</h2>
+                    <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Please rotate your device for the best archery experience</p>
+                </motion.div>
             )}
         </AnimatePresence>
       </div>

@@ -119,6 +119,13 @@ Fix15: Resolved asset loading 404s on Render/GitHub subpaths by implementing a d
 Fix16: Removed redundant 2D UI crosshairs to prevent duplication; the game now relies solely on 3D crosshairs which toggle correctly between default and scoped modes.
 Fix17: Fixed critical hit registration bug where server relied on static coordinates while client used dynamic physics. Implemented ID-based validation for reliable scoring.
 Fix18: Synchronized bird health between client and server (set to 1 HP) to ensure consistent "one-shot" kill mechanics and prevent zombie birds.
+Fix19: Implemented analog camera smoothing with velocity-based damping for fluid aiming.
+Fix20: Split mobile touch controls: Left side for "Pull-to-Charge" (Bow), Right side for "Touch-Look" (Camera).
+Fix21: Added React-based 2D static crosshair overlay that auto-hides when scoped.
+Fix22: Clamped vertical camera pitch to +/- 80 degrees to prevent inversion.
+Fix23: Integrated charge meter with spring animation and dynamic bowstring deformation based on draw power.
+Fix24: Replaced image-based environment with a fully procedural Three.js system including dynamic Sky (Rayleigh scattering), instanced grass/flowers for high-performance vegetation, and generated billboard clouds. Removed dependency on external skybox textures.
+Fix25: Resolved mobile responsiveness issue on `/bird-shooting` by removing fixed viewport constraints in `App.jsx` and `BirdShooting.jsx`, enabling lobby scrolling and optimizing element scaling for small screens.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.

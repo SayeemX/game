@@ -34,7 +34,7 @@ const AppContent = () => {
   return (
     <div className="min-h-screen bg-[#0d1117] text-white font-sans selection:bg-yellow-500 selection:text-black">
       {!isGamePage && <Navbar />}
-      <main className={isGamePage ? 'h-screen w-screen overflow-hidden' : ''}>
+      <main>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/profile" element={<Profile />} />

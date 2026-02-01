@@ -107,16 +107,26 @@ class BirdShootingEngine {
 
     let hitBird = null;
 
-    // 1. Direct ID Match (Trusted Mode for Sync)
+    // 1. Direct ID Match (Trusted Mode for Sync + Validation)
     if (birdId !== undefined && birdId !== null) {
         const bird = game.birds.find(b => b.id === birdId);
-        // Only register if bird is alive and hasn't been killed yet
         if (bird && bird.alive) {
-            hitBird = bird;
+            // Add distance validation to prevent spoofing
+            const dx = bird.x - x;
+            const dy = bird.y - y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            // Allow some margin for network latency/physics diffs
+            const validationRadius = (this.birdTypes[bird.type].size / 5); 
+            
+            if (distance <= validationRadius) {
+                hitBird = bird;
+            } else {
+                console.warn(`Shot Rejected: ID Match but Distance too far (${distance.toFixed(2)} > ${validationRadius.toFixed(2)})`);
+            }
         }
     } 
     
-    // 2. Fallback: Hitbox Validation (if no ID provided or ID mismatch)
+    // 2. Fallback: Hitbox Validation
     if (!hitBird) {
         for (const bird of game.birds) {
             if (!bird.alive) continue;
@@ -125,6 +135,7 @@ class BirdShootingEngine {
             const dy = bird.y - y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
+            // Scaled radius for coordinate space
             const hitRadius = (this.birdTypes[bird.type].size / 10);
             
             if (distance <= hitRadius) {
