@@ -145,7 +145,9 @@ Fix54: Implemented manual "Reload Session" functionality in BirdShooting game. A
 Fix55: Resolved "TypeError: can't access property onShoot, this.game is undefined" in `BirdShooting.jsx` by correcting the scope reference in `HuntingGame3D.animate` from `this.game.onShoot` to `this.onShoot`, and ensuring correct power reporting using `arrow.charge`.
 
 Fix56: Implemented "Auto-Recharge" logic for Bird Shooting sessions. Added a server-side permission-based deduction system that automatically extends the session every interval (increasing by 1 minute each time) if enabled by the user. Implemented a "One-Time Permission" modal in the frontend that appears when the timer first expires, allowing users to enable auto-recharge or perform a manual extension.
-Fix57: Implemented mouse wheel zoom functionality in Bird Shooting game, allowing players to cycle through zoom levels using the scroll wheel while scoped or tracking.
+Fix57: Implemented mouse wheel zoom functionality in Bird Shooting game, allowing players to cycle through zoom levels using the scroll wheel while scoped or tracking.Fix59: Optimized the `animate` loop by delegating bird state management to the `BirdSystem3D` class, improving performance and code maintainability.
+Fix60: Implemented frame-based sprite sheet animation for birds. Replaced the simple scaling "flap" with actual texture offset scrolling to support multiple flight states provided in the bird PNGs. Added configurable frame counts per bird type.
+Fix61: Normalized Eagle animation logic to handle its unique vertical 6-frame sprite sheet (64x192). Implemented aspect-ratio-corrected geometry (2:1) for the Eagle to prevent texture stretching while maintaining consistent 64px-normalized frame indexing.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.

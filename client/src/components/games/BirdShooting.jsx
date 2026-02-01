@@ -181,11 +181,11 @@ class BirdSystem3D {
     this.birds = [];
     this.activeBirdIndex = 0;
     this.birdConfigs = {
-      sparrow: { speed: 1.8, size: 2.8, points: 10, asset: 'sparrow' },
-      pigeon: { speed: 1.5, size: 3.2, points: 15, asset: 'pigeon' },
-      crow: { speed: 2.5, size: 3.5, points: 25, asset: 'pigeon' },
-      eagle: { speed: 3.5, size: 5.0, points: 50, asset: 'eagle' },
-      phoenix: { speed: 5.5, size: 6.0, points: 150, asset: 'rare' }
+      sparrow: { speed: 1.8, size: 2.8, points: 10, asset: 'sparrow', frames: 3, dir: 'h' },
+      pigeon: { speed: 1.5, size: 3.2, points: 15, asset: 'pigeon', frames: 3, dir: 'h' },
+      crow: { speed: 2.5, size: 3.5, points: 25, asset: 'pigeon', frames: 3, dir: 'h' },
+      eagle: { speed: 3.5, size: 5.0, points: 50, asset: 'eagle', frames: 6, dir: 'v' },
+      phoenix: { speed: 5.5, size: 6.0, points: 150, asset: 'rare', frames: 3, dir: 'h' }
     };
     
     this.textureLoader = new THREE.TextureLoader();
@@ -203,13 +203,32 @@ class BirdSystem3D {
       const texturePath = `${basename}/assets/birds/${config.asset}/fly.png`;
       const texture = this.textureLoader.load(texturePath);
       
-      const geometry = new THREE.PlaneGeometry(config.size, config.size);
-      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
+      // Sprite Sheet Configuration (Flexible for H/V)
+      let aspect = 1; 
+      if (config.dir === 'v') {
+          texture.wrapT = THREE.RepeatWrapping;
+          texture.repeat.set(1, 1 / config.frames);
+          // If 6 frames in 64x192, each frame is 64x32 -> aspect 2:1
+          aspect = 2; 
+      } else {
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.repeat.set(1 / config.frames, 1);
+          // If 3 frames in 192x64, each frame is 64x64 -> aspect 1:1
+          aspect = 1;
+      }
+      
+      const geometry = new THREE.PlaneGeometry(config.size, config.size / aspect);
+      const material = new THREE.MeshBasicMaterial({ 
+        map: texture, 
+        transparent: true, 
+        side: THREE.DoubleSide,
+        alphaTest: 0.5 
+      });
       const mesh = new THREE.Mesh(geometry, material);
       
       if (config.speed < 0) mesh.rotation.y = Math.PI; 
 
-      // Initial Position (Start off-screen for sequential entry)
+      // Initial Position
       const startX = -70; 
       const baseY = data.y + 10;
       mesh.position.set(startX, baseY, -40 - (Math.random() * 20));
@@ -219,7 +238,7 @@ class BirdSystem3D {
         mass: 1.0,
         position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z),
         shape: new CANNON.Sphere(config.size / 2),
-        type: CANNON.Body.KINEMATIC, // Kinematic during flight
+        type: CANNON.Body.KINEMATIC,
         linearDamping: 0.05,
         angularDamping: 0.05
       });
@@ -232,10 +251,11 @@ class BirdSystem3D {
         type: config,
         baseY: baseY,
         velocity: new THREE.Vector3(data.speed * 4, 0, 0),
-        active: index === 0, // Only first bird is active initially
+        active: index === 0,
         serverId: data.id,
         isDying: false,
-        spawned: index === 0
+        spawned: index === 0,
+        animTime: Math.random() * 10
       };
       
       this.birds.push(bird);
@@ -246,16 +266,12 @@ class BirdSystem3D {
   updateFlock(deltaTime) {
     const time = Date.now() * 0.001;
     
-    // Process only the active bird
     const bird = this.birds[this.activeBirdIndex];
     if (!bird) return;
 
     if (bird.isDying) {
-      // Sync mesh with physics body
       bird.mesh.position.copy(bird.body.position);
       bird.mesh.quaternion.copy(bird.body.quaternion);
-      
-      // Air resistance simulation (manual dampening)
       bird.body.velocity.scale(0.98, bird.body.velocity);
       
       if (bird.mesh.position.y < -10) {
@@ -268,16 +284,10 @@ class BirdSystem3D {
     }
 
     if (bird.active) {
-      // Move Kinematic Body
       bird.body.position.x += bird.velocity.x * deltaTime;
-      
-      // Ballistic-like bobbing (intentional flight path)
       bird.body.position.y = bird.baseY + Math.sin(time * 2 + bird.serverId) * 3;
-      
-      // Sync mesh
       bird.mesh.position.copy(bird.body.position);
       
-      // Out of bounds check
       if (bird.mesh.position.x > 80) {
         bird.active = false;
         this.game.scene.remove(bird.mesh);
@@ -285,11 +295,20 @@ class BirdSystem3D {
         this.spawnNext();
       }
 
-      // Flapping Animation
-      const flap = Math.sin(time * (15 + bird.type.speed * 3));
-      bird.mesh.scale.y = 1.0 + flap * 0.3;
+      // Sprite Sheet Animation (Handle H and V)
+      bird.animTime += deltaTime;
+      const animationSpeed = 10; 
+      const frame = Math.floor(bird.animTime * animationSpeed) % bird.type.frames;
       
-      // Look direction
+      if (bird.type.dir === 'v') {
+          // Vertical offset (Top to bottom typically, or bottom to top)
+          // Three.js texture offset Y is 0 at bottom, 1 at top. 
+          // If frames are top-to-bottom in image, frame 0 is at offset Y = (frames-1)/frames
+          bird.mesh.material.map.offset.y = 1 - ((frame + 1) / bird.type.frames);
+      } else {
+          bird.mesh.material.map.offset.x = frame / bird.type.frames;
+      }
+      
       bird.mesh.lookAt(bird.mesh.position.clone().add(bird.velocity));
       bird.mesh.rotateY(Math.PI / 2);
     }
