@@ -142,6 +142,10 @@ Fix52: Final audit of game logic and successful deployment of refined mobile erg
 Fix53: Added "Retype Password" field to registration page with matching validation logic to ensure credential integrity.
 Fix54: Implemented manual "Reload Session" functionality in BirdShooting game. Added server-side `bird_shoot:extend_session` handler and client-side UI to display a Reload button when the session timer expires or auto-charge fails. The reload action manually triggers the session extension and billing logic.
 
+Fix55: Resolved "TypeError: can't access property onShoot, this.game is undefined" in `BirdShooting.jsx` by correcting the scope reference in `HuntingGame3D.animate` from `this.game.onShoot` to `this.onShoot`, and ensuring correct power reporting using `arrow.charge`.
+
+Fix56: Implemented "Auto-Recharge" logic for Bird Shooting sessions. Added a server-side permission-based deduction system that automatically extends the session every interval (increasing by 1 minute each time) if enabled by the user. Implemented a "One-Time Permission" modal in the frontend that appears when the timer first expires, allowing users to enable auto-recharge or perform a manual extension.
+
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
 - **Desktop Controls**: Full keyboard support (Space to Draw/Shoot, ESC to Cancel).

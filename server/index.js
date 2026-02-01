@@ -130,10 +130,19 @@ const activeSessions = new Map(); // userId -> { startTime, lastChargeTime, sock
 
 const SESSION_CHARGE_AMOUNT = 0.1; 
 
-const chargeUserSession = async (userId, io) => {
+const chargeUserSession = async (userId, io, isAuto = false) => {
     try {
         const session = activeSessions.get(userId);
         if (!session) return false;
+
+        // Auto-Recharge Check
+        if (isAuto && !session.autoRecharge) {
+            io.to(session.socketId).emit('error', { 
+                message: 'Session Expired',
+                type: 'SESSION_EXPIRED'
+            });
+            return false;
+        }
 
         const user = await User.findById(userId);
         if (!user) return false;
@@ -169,14 +178,15 @@ const chargeUserSession = async (userId, io) => {
 
         // Schedule next charge
         currentSession.timer = setTimeout(async () => {
-            await chargeUserSession(userId, io);
+            await chargeUserSession(userId, io, true);
         }, nextDurationMs);
 
         io.to(currentSession.socketId).emit('balance_update', { 
             mainBalance: user.wallet.mainBalance,
             sessionCharged: currentSession.totalCharged,
             nextChargeTime: Date.now() + nextDurationMs,
-            intervalMinutes: currentSession.intervalMinutes
+            intervalMinutes: currentSession.intervalMinutes,
+            autoRecharge: currentSession.autoRecharge
         });
         
         await Transaction.create({
@@ -184,7 +194,7 @@ const chargeUserSession = async (userId, io) => {
             type: 'game_bet',
             amount: SESSION_CHARGE_AMOUNT,
             currency: 'TRX',
-            description: `Bird Shooting Session Charge (${currentSession.intervalMinutes-1} min) - Match: ${currentSession.matchId}`,
+            description: `Bird Shooting Session Extension (${currentSession.intervalMinutes} min) - Match: ${currentSession.matchId}`,
             status: 'completed'
         });
 
@@ -266,7 +276,7 @@ io.on('connection', (socket) => {
             const durationMs = INITIAL_INTERVAL_MIN * 60 * 1000;
             
             const sessionTimer = setTimeout(async () => {
-                await chargeUserSession(socket.user.id, io);
+                await chargeUserSession(socket.user.id, io, true);
             }, durationMs);
 
             activeSessions.set(socket.user.id, {
@@ -276,7 +286,8 @@ io.on('connection', (socket) => {
                 timer: sessionTimer,
                 totalCharged: SESSION_CHARGE_AMOUNT,
                 matchId: game.id,
-                intervalMinutes: INITIAL_INTERVAL_MIN
+                intervalMinutes: INITIAL_INTERVAL_MIN,
+                autoRecharge: false
             });
 
             await Transaction.create({
@@ -331,7 +342,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('bird_shoot:extend_session', async () => {
+    socket.on('bird_shoot:extend_session', async (data) => {
         const userId = socket.user.id;
         const session = activeSessions.get(userId);
         
@@ -339,8 +350,12 @@ io.on('connection', (socket) => {
             return socket.emit('error', { message: 'No active session found' });
         }
 
+        if (data && data.autoRecharge !== undefined) {
+            session.autoRecharge = !!data.autoRecharge;
+        }
+
         // Attempt manual charge
-        const success = await chargeUserSession(userId, io);
+        const success = await chargeUserSession(userId, io, false);
         if (!success) {
             socket.emit('bird_shoot:extend_failed', { message: 'Insufficient balance to extend session' });
         }

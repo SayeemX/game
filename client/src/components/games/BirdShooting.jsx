@@ -1286,9 +1286,9 @@ class HuntingGame3D {
                       this.birdSystem.createFeatherExplosion(bird.mesh.position);
                       this.birdSystem.createFloatingScore(bird.mesh.position, bird.type.points);
 
-                      if (this.game.onShoot) {
-                          this.game.onShoot({ 
-                              power: this.drawPower,
+                      if (this.onShoot) {
+                          this.onShoot({ 
+                              power: arrow.charge,
                               hit: true,
                               birdId: bird.serverId,
                               x: (bird.mesh.position.x + 50),
@@ -1382,6 +1382,8 @@ const BirdShooting = () => {
   const [error, setError] = useState(null);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
   const [showReload, setShowReload] = useState(false);
+  const [showAutoRechargeModal, setShowAutoRechargeModal] = useState(false);
+  const [autoRechargeEnabled, setAutoRechargeEnabled] = useState(false);
 
   const gameContainerRef = useRef(null);
   const gameInstanceRef = useRef(null);
@@ -1412,8 +1414,16 @@ const BirdShooting = () => {
 
   const handleReload = () => {
       if (!socket) return;
-      socket.emit('bird_shoot:extend_session');
+      socket.emit('bird_shoot:extend_session', { autoRecharge: autoRechargeEnabled });
       // Optimistically hide reload, will show again if error/fail
+      setShowReload(false);
+  };
+
+  const handleConfirmExtension = (enableAuto) => {
+      if (!socket) return;
+      if (enableAuto) setAutoRechargeEnabled(true);
+      socket.emit('bird_shoot:extend_session', { autoRecharge: enableAuto });
+      setShowAutoRechargeModal(false);
       setShowReload(false);
   };
 
@@ -1427,11 +1437,13 @@ const BirdShooting = () => {
         setSessionCharged(data.sessionCharged || 0.1); 
         setNextChargeTime(data.nextChargeTime);
         setCurrentIntervalMinutes(data.intervalMinutes || 5);
+        if (data.autoRecharge !== undefined) setAutoRechargeEnabled(data.autoRecharge);
         setGameState('playing');
         setSessionTime(0);
         setLoading(false);
         setIsSessionExpired(false);
         setShowReload(false);
+        setShowAutoRechargeModal(false);
     };
 
     const handleShotResult = (res) => {
@@ -1461,16 +1473,27 @@ const BirdShooting = () => {
             setNextChargeTime(data.nextChargeTime);
             setShowReload(false); // Hide reload on successful charge
             setIsSessionExpired(false);
+            setShowAutoRechargeModal(false);
         }
         if (data.intervalMinutes) {
             setCurrentIntervalMinutes(data.intervalMinutes);
+        }
+        if (data.autoRecharge !== undefined) {
+            setAutoRechargeEnabled(data.autoRecharge);
         }
     };
 
     const handleError = (err) => {
         if (err.type === 'SESSION_EXPIRED') {
             setIsSessionExpired(true);
-            setShowReload(true);
+            // Only show modal if we haven't already enabled auto-recharge (or if it failed)
+            // If user explicitly enabled it, but it failed (balance), we should probably show the Reload button instead of annoying modal.
+            // But prompt says "seek onetime permission", implies showing it once.
+            if (!autoRechargeEnabled) {
+                setShowAutoRechargeModal(true);
+            } else {
+                setShowReload(true);
+            }
         } else {
             setError(err.message || 'An error occurred');
         }
@@ -1903,7 +1926,7 @@ const BirdShooting = () => {
                                 className="w-full h-full absolute inset-0 bg-red-600/80 hover:bg-red-500 flex flex-col items-center justify-center z-20 animate-pulse transition-colors"
                             >
                                 <RotateCw className="w-4 h-4 md:w-6 md:h-6 text-white mb-1" />
-                                <span className="text-[8px] md:text-[10px] font-black uppercase text-white tracking-widest">RELOAD</span>
+                                <span className="text-[8px] md:text-[10px] font-black uppercase text-white tracking-widest">EXTEND</span>
                                 <span className="text-[6px] md:text-[8px] font-bold text-white/80">0.1 TRX</span>
                             </button>
                         ) : (
@@ -1930,7 +1953,7 @@ const BirdShooting = () => {
                                 
                                 <p className="text-[6px] md:text-[9px] text-orange-500 font-black uppercase hud-label tracking-tighter flex items-center gap-1 z-10">
                                     <Clock className="w-2 h-2 md:w-3 md:h-3 animate-pulse" />
-                                    Session
+                                    Session {autoRechargeEnabled && <span className="text-[#3bc117] ml-1">(AUTO)</span>}
                                 </p>
                                 <p className="text-sm md:text-4xl font-black text-white hud-value leading-none font-mono z-10">
                                     {timeLeftStr}
@@ -2184,6 +2207,52 @@ const BirdShooting = () => {
                     DRAG LEFT TO DRAW • RELEASE TO HOLD • DRAG RIGHT TO AIM • TAP LEFT TO SHOOT
                 </div>
             </div>
+
+            {/* Auto-Recharge / Extension Modal */}
+            <AnimatePresence>
+                {showAutoRechargeModal && (
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+                    >
+                        <motion.div 
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            className="bg-[#1a2c38] border-2 border-[#3bc117] p-8 rounded-[2rem] text-center max-w-sm w-full shadow-2xl"
+                        >
+                            <Clock className="w-12 h-12 text-[#3bc117] mx-auto mb-4" />
+                            <h3 className="text-2xl font-black uppercase tracking-tighter text-white mb-2">Session Expired</h3>
+                            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-6 leading-relaxed">
+                                Extend your hunt for <span className="text-[#3bc117]">0.1 TRX</span>?<br/>
+                                <span className="text-[10px] text-orange-500 italic">Next interval: {currentIntervalMinutes + 1} minutes</span>
+                            </p>
+
+                            <div className="space-y-4">
+                                <button 
+                                    onClick={() => handleConfirmExtension(true)}
+                                    className="w-full py-4 bg-[#3bc117] hover:bg-[#45d61d] text-black font-black rounded-xl uppercase tracking-widest transition-all shadow-lg active:scale-95 text-xs"
+                                >
+                                    Enable Auto-Recharge
+                                </button>
+                                <button 
+                                    onClick={() => handleConfirmExtension(false)}
+                                    className="w-full py-4 bg-white/5 hover:bg-white/10 text-white font-black rounded-xl uppercase tracking-widest transition-all border border-white/10 active:scale-95 text-[10px]"
+                                >
+                                    One-Time Extend
+                                </button>
+                                <button 
+                                    onClick={() => handleEndGame()}
+                                    className="w-full py-2 text-red-500 font-black uppercase tracking-widest text-[8px] hover:underline"
+                                >
+                                    Exit Arena
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
           </div>
         )}
 
