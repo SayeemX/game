@@ -313,6 +313,7 @@ class BowSystem3D {
     this.game = game;
     this.bow = null;
     this.isDrawn = false;
+    this.isHeld = false; // NEW state for "Release to Hold"
     this.isScoped = false;
     this.isNocked = false;
     this.isTracking = false; 
@@ -454,27 +455,31 @@ class BowSystem3D {
     // Desktop: Mouse Look & Click to Shoot
     this._onMouseDown = (e) => {
         if (e.target.closest('button')) return;
-        // Right Click: Just enables look (if we want explicit toggle)
-        // Left Click: Charge/Shoot
+        // Desktop uses old logic for simplicity or can be matched to mobile
         if (e.button === 0) {
-            this.handleMouseDown(e);
+            if (this.isHeld) {
+                this.shoot();
+                this.isHeld = false;
+            } else {
+                this.handleMouseDown(e);
+            }
         }
     };
     
     this._onMouseUp = (e) => {
         if (e.button === 0) {
-            this.handleMouseUp(e);
+            if (this.isDrawn && this.drawPower > 0.2) {
+                this.isHeld = true;
+            } else {
+                this.handleMouseUp(e);
+            }
         }
     };
 
     this._onMouseMove = (e) => {
-        // Always look if not touching? Or only if right click?
-        // Let's keep "Always Look" for desktop if pointer is locked, or explicit drag.
-        // For simplicity in this hybrid code:
         if (document.pointerLockElement === element) {
              const movementX = e.movementX || 0;
              const movementY = e.movementY || 0;
-             // Add to velocity instead of direct rotation
              this.rotationVelocity.x -= movementX * 0.0002;
              this.rotationVelocity.y -= movementY * 0.0002;
         }
@@ -483,7 +488,6 @@ class BowSystem3D {
     element.addEventListener('mousedown', (e) => {
         if(e.button === 0) this._onMouseDown(e);
         if(e.button === 2) {
-            // Right click requests pointer lock for desktop experience
             if (document.pointerLockElement !== element) element.requestPointerLock();
         }
     });
@@ -491,7 +495,7 @@ class BowSystem3D {
     document.addEventListener('mousemove', this._onMouseMove);
 
     // --- Mobile Touch Controls (Split Screen) ---
-    this.activeTouches = {}; // Map identifier -> 'aim' | 'charge'
+    this.activeTouches = {}; 
     this.chargeStartY = 0;
 
     this._onTouchStart = (e) => {
@@ -503,8 +507,15 @@ class BowSystem3D {
             const touch = e.changedTouches[i];
             
             if (touch.clientX < width / 2) {
-                // LEFT SIDE: CHARGE
+                // LEFT SIDE: CHARGE OR FIRE
                 this.activeTouches[touch.identifier] = 'charge';
+                
+                if (this.isHeld) {
+                    this.shoot();
+                    this.isHeld = false;
+                    return;
+                }
+
                 this.chargeStartY = touch.clientY;
                 
                 // Start Charging
@@ -536,17 +547,13 @@ class BowSystem3D {
             const touch = e.changedTouches[i];
             const type = this.activeTouches[touch.identifier];
 
-            if (type === 'charge') {
-                // Drag Down to Increase Power
+            if (type === 'charge' && !this.isHeld) {
                 const deltaY = touch.clientY - this.chargeStartY;
-                // Map delta to 0-1 range. Max pull ~200px
                 const power = Math.min(Math.max(deltaY / 200, 0), 1);
                 
-                // We manually override draw power here instead of time-based
                 this.drawPower = power;
                 this.updateBowString(this.drawPower);
                 
-                // Visual Arm Movement
                 if (this.leftArm) {
                     this.leftArm.position.z = 0.6 + this.drawPower * 0.2;
                     this.leftArm.position.x = -0.4 - this.drawPower * 0.1;
@@ -559,7 +566,6 @@ class BowSystem3D {
                 const deltaX = touch.clientX - this.lastTouchX;
                 const deltaY = touch.clientY - this.lastTouchY;
                 
-                // Analog Smoothing: Add to velocity
                 const sensitivity = this.isScoped ? 0.0005 : 0.0015;
                 this.rotationVelocity.x -= deltaX * sensitivity;
                 this.rotationVelocity.y -= deltaY * sensitivity;
@@ -576,13 +582,13 @@ class BowSystem3D {
             const type = this.activeTouches[touch.identifier];
 
             if (type === 'charge') {
-                // Release Arrow
-                if (this.drawPower > 0.2) { // Minimum power to shoot
-                    this.shoot();
+                // RELEASE TO HOLD
+                if (this.drawPower > 0.2) {
+                    this.isHeld = true;
                 } else {
-                    this.cancel(); // Cancel if just a tap or low power
+                    this.cancel();
+                    this.isDrawn = false;
                 }
-                this.isDrawn = false;
             }
             
             delete this.activeTouches[touch.identifier];
@@ -601,25 +607,32 @@ class BowSystem3D {
         if (e.code === 'KeyR') this.nock();
         if (e.code === 'Space') {
             e.preventDefault();
-            if (!this.isScoped && !this.isDrawn && !this.isTracking) this.handleMouseDown(e);
-            else if (this.isScoped) this.shoot();
+            if (this.isHeld) {
+                this.shoot();
+                this.isHeld = false;
+            } else if (!this.isScoped && !this.isDrawn && !this.isTracking) {
+                this.handleMouseDown(e);
+            }
         }
         if (e.code === 'Escape') this.cancel();
     };
     this._onKeyUp = (e) => {
         this.keys[e.code] = false;
         if (e.code === 'Space') {
-            if (this.isDrawn && !this.isScoped) this.handleMouseUp(e);
+            if (this.isDrawn && this.drawPower > 0.2) {
+                this.isHeld = true;
+            } else if (this.isDrawn) {
+                this.handleMouseUp(e);
+            }
         }
     };
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
   }
 
-  // ... (Keep existing helpers like raycastTarget, cycleZoom, setZoomIndex, applyZoom)
+  // ... rest of the helpers ...
   
   raycastTarget() {
-      // ... (Same as before)
       this.raycaster.setFromCamera(this.mouse, this.game.camera);
       const birds = this.game.birdSystem.birds.map(b => b.mesh);
       const intersects = this.raycaster.intersectObjects(birds, true);
@@ -694,6 +707,7 @@ class BowSystem3D {
   cancel() {
       if (this.isTracking) return;
       this.isDrawn = false;
+      this.isHeld = false;
       this.isScoped = false;
       this.isNocked = false;
       this.drawPower = 0;
@@ -729,8 +743,7 @@ class BowSystem3D {
 
   handleMouseUp(e) {
     if (this.isDrawn && !this.isTracking) {
-      this.isDrawn = false;
-      this.shoot();
+      // Logic handled in update or event listeners for mobile hold
     }
   }
 
@@ -739,10 +752,8 @@ class BowSystem3D {
       this.game.camera.rotation.y += this.rotationVelocity.x;
       this.game.camera.rotation.x += this.rotationVelocity.y;
       
-      // Damping (Friction)
       this.rotationVelocity.multiplyScalar(this.damping);
 
-      // Clamp Pitch (-80 to +80 degrees = -1.396 to +1.396 radians)
       this.game.camera.rotation.x = Math.max(-1.396, Math.min(1.396, this.game.camera.rotation.x));
       this.game.camera.rotation.order = 'YXZ';
 
@@ -752,9 +763,8 @@ class BowSystem3D {
           this.applyZoom();
       }
 
-      // 3. Draw Animation (for Mouse Hold, Touch uses direct power)
-      // If using mouse hold (time-based)
-      if (this.isDrawn && Object.keys(this.activeTouches).length === 0) {
+      // 3. Draw Animation (Mouse only fallback)
+      if (this.isDrawn && Object.keys(this.activeTouches).length === 0 && !this.isHeld) {
           const elapsed = Date.now() - this.drawStartTime;
           this.drawPower = Math.min(elapsed / this.maxDrawTime, 1);
           this.updateBowString(this.drawPower);
@@ -779,6 +789,7 @@ class BowSystem3D {
       this.isNocked = false;
       this.isTracking = true; 
       this.isDrawn = false;
+      this.isHeld = false;
       if (this.game.onShotFired) this.game.onShotFired();
 
       this.game.haptics.trigger('shoot');
@@ -805,10 +816,7 @@ class BowSystem3D {
       const launchVelocity = direction.multiplyScalar(baseSpeed * this.drawPower);
       arrowBody.velocity.set(launchVelocity.x, launchVelocity.y, launchVelocity.z);
       
-      // Add Spin for Physics Stability (Rifling effect)
-      arrowBody.angularVelocity.set(0, 0, 10); // Spin around Z axis relative to arrow? 
-      // Actually global Z, but arrow aligns to velocity. 
-      // Physics-based rotation in Arrow.js will align it visually.
+      arrowBody.angularVelocity.set(0, 0, 10); 
 
       arrowBody.addEventListener('collide', (event) => {
           if (flyingArrow.isActive) {
@@ -838,14 +846,28 @@ class BowSystem3D {
   }
 
   finalizeShot() {
+      const wasScoped = this.isScoped;
       this.isTracking = false;
-      if (!this.isScoped) {
+      
+      // Force exit scope and reset zoom/FOV after shot finishes
+      if (wasScoped) {
+          this.toggleScope(); 
+      } else {
           this.scopeCrosshair.visible = false;
           this.targetZoom = 1;
           this.currentZoom = 1;
           this.applyZoom();
           if (this.game.onScopeExit) this.game.onScopeExit();
       }
+      
+      // Reset Camera Position and FOV
+      this.game.camera.position.set(0, 1.7, 0);
+      this.game.camera.fov = 75;
+      this.game.camera.updateProjectionMatrix();
+      
+      // Smoothly reset camera pitch to eye level
+      this.game.camera.rotation.x = 0;
+      
       if (this.game.onNock) this.game.onNock(false);
   }
 
@@ -853,7 +875,6 @@ class BowSystem3D {
       const element = this.game.container;
       element.removeEventListener('mousedown', this._onMouseDown);
       element.removeEventListener('mouseup', this._onMouseUp);
-      // element.removeEventListener('wheel', this._onWheel); // Removed wheel for now or keep it?
       element.removeEventListener('touchstart', this._onTouchStart);
       element.removeEventListener('touchend', this._onTouchEnd);
       element.removeEventListener('touchmove', this._onTouchMove);
@@ -862,6 +883,7 @@ class BowSystem3D {
       window.removeEventListener('keyup', this._onKeyUp);
   }
 }
+
 
 class PhysiologicalSimulation {
   constructor(game) {
@@ -1177,16 +1199,33 @@ class HuntingGame3D {
           this.camera.rotation.x = Math.max(-1.45, Math.min(1.45, this.camera.rotation.x));
           this.camera.rotation.order = 'YXZ';
       } else if (this.activeTrackingArrow) {
-          const arrowPos = this.activeTrackingArrow.mesh.position;
-          const targetRotation = new THREE.Quaternion();
-          const m = new THREE.Matrix4();
-          m.lookAt(this.camera.position, arrowPos, new THREE.Vector3(0,1,0));
-          targetRotation.setFromRotationMatrix(m);
-          this.camera.quaternion.slerp(targetRotation, 0.1);
-
-          if (!this.activeTrackingArrow.isActive) {
+          const arrow = this.activeTrackingArrow;
+          const arrowPos = arrow.mesh.position;
+          
+          if (arrow.isActive) {
+              // --- Cinematic Follow Cam ---
+              // Calculate target position behind the arrow
+              const direction = new THREE.Vector3(0, 0, 1);
+              direction.applyQuaternion(arrow.mesh.quaternion);
+              
+              const followOffset = direction.clone().multiplyScalar(-6); // Slightly further back
+              followOffset.y += 1.5; // Slightly higher
+              
+              const targetPos = arrowPos.clone().add(followOffset);
+              
+              // Exponential Lerp for ultra-smooth tracking
+              this.camera.position.lerp(targetPos, 0.1);
+              this.camera.lookAt(arrowPos);
+              
+              // Dynamic FOV Tightening
+              this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, 30, 0.05);
+              this.camera.updateProjectionMatrix();
+          } else {
+              // --- Impact Detection & View ---
+              this.camera.lookAt(arrowPos);
+              
               if (!this.shotFinishTime) this.shotFinishTime = Date.now();
-              if (Date.now() - this.shotFinishTime > 1500) {
+              if (Date.now() - this.shotFinishTime > 2500) { // 2.5s impact pause
                   this.bowSystem.finalizeShot();
                   this.activeTrackingArrow = null;
                   this.shotFinishTime = null;
@@ -1214,12 +1253,13 @@ class HuntingGame3D {
           p.mesh.material.opacity = p.life;
       }
       
+      // Update arrows and check collisions
       const arrows = this.bowSystem.arrows;
       for (let i = arrows.length - 1; i >= 0; i--) {
           const arrow = arrows[i];
           arrow.update(deltaTime);
           
-          if (!arrow.isActive) {
+          if (!arrow.isActive || arrow.isSkipped) {
               if (!arrow.dyingTime) arrow.dyingTime = Date.now();
               if (Date.now() - arrow.dyingTime > 5000) {
                   this.scene.remove(arrow.mesh);
@@ -1275,6 +1315,18 @@ class HuntingGame3D {
       });
 
       this.renderer.render(this.scene, this.camera);
+  }
+
+  skipShot() {
+      if (this.activeTrackingArrow) {
+          // Mark as skipped so it doesn't trigger hits/points
+          this.activeTrackingArrow.isSkipped = true;
+          
+          // Detach camera tracking and reset camera
+          this.activeTrackingArrow = null;
+          this.shotFinishTime = null;
+          this.bowSystem.finalizeShot();
+      }
   }
 
   dispose() {
@@ -1531,6 +1583,15 @@ const BirdShooting = () => {
       }
   };
 
+  const handleSkip = () => {
+      if (gameInstanceRef.current) {
+          gameInstanceRef.current.skipShot();
+          setIsTracking(false);
+          setIsScoped(false);
+          setShowScopeUI(false);
+      }
+  };
+
   const handleJoystickMove = (delta) => {
       if (gameInstanceRef.current) {
           gameInstanceRef.current.aimVector.set(delta.x, delta.y);
@@ -1762,7 +1823,15 @@ const BirdShooting = () => {
                     </div>
                 </div>
 
-                <div className="flex gap-2 pointer-events-auto">
+                <div className="flex gap-2 pointer-events-auto items-center">
+                    {isTracking && (
+                        <button 
+                            onClick={handleSkip}
+                            className="bg-[#3bc117] text-black px-4 py-1.5 md:px-6 md:py-3 rounded-lg md:rounded-xl font-black text-[8px] md:text-xs uppercase tracking-[0.2em] shadow-[0_0_20px_rgba(59,193,23,0.4)] hover:scale-105 active:scale-95 transition-all"
+                        >
+                            Skip
+                        </button>
+                    )}
                     <button 
                         onClick={() => handleEndGame()}
                         className="bg-red-500/20 hover:bg-red-500/40 text-red-500 px-3 py-1.5 md:p-3 rounded-lg md:rounded-xl border border-red-500/30 backdrop-blur-md font-black text-[8px] md:text-xs uppercase tracking-widest shadow-lg extract-btn"
@@ -1787,21 +1856,21 @@ const BirdShooting = () => {
                 </div>
             )}
 
-            {/* Vertical Zoom Bar (Right) - Discrete Steps */}
+            {/* Vertical Zoom Bar (Far Right) */}
             <AnimatePresence>
                 {isScoped && (
                     <motion.div 
-                        initial={{ opacity: 0, x: 50 }}
+                        initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 50 }}
-                        className="absolute right-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30 zoom-bar"
+                        exit={{ opacity: 0, x: 20 }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-30 zoom-bar"
                     >
-                        <div className="bg-[#0f212e]/80 backdrop-blur-md border-2 border-white/10 p-2 rounded-2xl flex flex-col gap-2 shadow-2xl">
+                        <div className="bg-black/40 backdrop-blur-md border border-white/10 p-1.5 rounded-xl flex flex-col gap-2 shadow-2xl">
                             {[8, 6, 4, 2].map((z, i) => (
                                 <button
                                     key={z}
                                     onClick={() => handleSetZoomIndex(3-i)}
-                                    className={`w-10 h-10 md:w-12 md:h-12 rounded-xl font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black shadow-[0_0_20px_rgba(59,193,23,0.4)]' : 'bg-black/40 text-gray-400 hover:text-white'}`}
+                                    className={`w-10 h-10 md:w-12 md:h-12 rounded-lg font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black' : 'bg-black/60 text-gray-400 hover:text-white'}`}
                                 >
                                     {z}x
                                 </button>
@@ -1860,62 +1929,60 @@ const BirdShooting = () => {
                 )}
             </AnimatePresence>
 
-            {/* Controls Overlay */}
-            <div className="absolute bottom-6 left-6 md:bottom-10 md:left-10 z-30 pointer-events-auto flex items-end gap-4 md:gap-8 action-buttons">
-                {/* Manual Scope Toggle */}
+            {/* Controls Overlay (Bottom Right) */}
+            <div className="absolute bottom-6 right-6 md:bottom-10 md:right-10 z-[60] pointer-events-auto flex items-center gap-4 action-buttons">
+                {/* Inventory Toggle (Symbol Only) */}
+                <button 
+                    onClick={() => setIsInventoryOpen(!isInventoryOpen)}
+                    className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-black/20 backdrop-blur-md border border-white/10 flex items-center justify-center shadow-2xl hover:bg-white/10 transition-all active:scale-90"
+                >
+                    <ShoppingBag className="w-6 h-6 md:w-8 md:h-8 text-[#3bc117]" />
+                </button>
+
+                {/* Scope Toggle (Transparent Styled) */}
                 {!isTracking && (
                     <button 
                         onClick={handleToggleScope}
-                        className={`w-14 h-14 md:w-20 md:h-20 rounded-full border-2 md:border-4 shadow-2xl flex items-center justify-center font-black text-[8px] md:text-[10px] uppercase tracking-widest transition-all scope-btn ${isScoped ? 'bg-[#3bc117] border-[#3bc117]/50 text-black' : 'bg-gray-800 border-gray-700 text-white'}`}
+                        className={`w-14 h-14 md:w-20 md:h-20 rounded-full border-2 backdrop-blur-sm shadow-2xl flex items-center justify-center font-black text-[8px] md:text-[10px] uppercase tracking-widest transition-all scope-btn ${isScoped ? 'bg-[#3bc117]/20 border-[#3bc117] text-[#3bc117]' : 'bg-white/5 border-white/20 text-white'}`}
                     >
                         {isScoped ? 'Unscope' : 'Scope'}
                     </button>
                 )}
             </div>
-            {/* Bottom Inventory Drawer */}
-            <div className={`absolute bottom-0 left-0 right-0 z-50 transition-transform duration-500 ${isInventoryOpen ? 'translate-y-0' : 'translate-y-[calc(100%-40px)]'}`}>
-                <div className="max-w-4xl mx-auto">
-                    {/* Toggle Handle */}
-                    <button 
-                        onClick={() => setIsInventoryOpen(!isInventoryOpen)}
-                        className="w-32 h-10 bg-[#0f212e] border-t border-l border-r border-gray-800 rounded-t-2xl mx-auto flex items-center justify-center gap-2 group"
-                    >
-                        {isInventoryOpen ? <ChevronDown className="w-4 h-4 text-[#3bc117]" /> : <ChevronUp className="w-4 h-4 text-[#3bc117] animate-bounce" />}
-                        <span className="text-[8px] font-black uppercase tracking-widest text-white">Inventory</span>
-                    </button>
 
-                    {/* Inventory Content */}
-                    <div className="bg-[#0f212e]/95 backdrop-blur-2xl border-t border-gray-800 p-6 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] h-48 overflow-y-auto">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-                            {/* Ammo Items */}
-                            {['arrow', 'pellet'].map(type => {
-                                const amount = inventory.items?.find(i => i.itemKey === type)?.amount || 0;
-                                return (
-                                    <div key={type} className="bg-black/40 border border-gray-800 p-3 rounded-2xl flex flex-col items-center gap-1">
-                                        <Zap className={`w-4 h-4 ${type === 'arrow' ? 'text-yellow-500' : 'text-orange-500'}`} />
-                                        <p className="text-[8px] font-black text-gray-500 uppercase font-sans">{type}s</p>
-                                        <p className="text-sm font-black text-white">{amount}</p>
-                                    </div>
-                                );
-                            })}
-                            {['BRONZE', 'SILVER', 'GOLD', 'DIAMOND'].map(tier => (
-                                <div key={tier} className="bg-black/40 border border-gray-800 p-3 rounded-2xl flex flex-col items-center gap-1">
-                                    <RotateCw className="w-4 h-4 text-yellow-500" />
-                                    <p className="text-[8px] font-black text-gray-500 uppercase">{tier}</p>
-                                    <p className="text-sm font-black text-white">{wallet.spinCredits?.[tier] || 0}</p>
+            {/* Inventory Drawer */}
+            <AnimatePresence>
+                {isInventoryOpen && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: 100 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 100 }}
+                        className="fixed bottom-24 right-6 md:bottom-32 md:right-10 z-[70] w-72 md:w-96"
+                    >
+                        <div className="bg-[#0f212e]/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-6 shadow-2xl">
+                            <div className="grid grid-cols-2 gap-4">
+                                {['arrow', 'pellet'].map(type => {
+                                    const amount = inventory.items?.find(i => i.itemKey === type)?.amount || 0;
+                                    return (
+                                        <div key={type} className="bg-black/40 border border-gray-800 p-3 rounded-2xl flex flex-col items-center gap-1">
+                                            <Zap className={`w-4 h-4 ${type === 'arrow' ? 'text-yellow-500' : 'text-orange-500'}`} />
+                                            <p className="text-[8px] font-black text-gray-500 uppercase">{type}s</p>
+                                            <p className="text-sm font-black text-white">{amount}</p>
+                                        </div>
+                                    );
+                                })}
+                                <div className="bg-black/40 border border-[#3bc117]/30 p-3 rounded-2xl flex flex-col items-center gap-1 col-span-2">
+                                    <Coins className="w-4 h-4 text-[#3bc117]" />
+                                    <p className="text-[8px] font-black text-gray-500 uppercase">Balance</p>
+                                    <p className="text-sm font-black text-[#3bc117]">{wallet.mainBalance.toFixed(2)} TRX</p>
                                 </div>
-                            ))}
-                            <div className="bg-black/40 border border-[#3bc117]/30 p-3 rounded-2xl flex flex-col items-center gap-1">
-                                <Coins className="w-4 h-4 text-[#3bc117]" />
-                                <p className="text-[8px] font-black text-gray-500 uppercase">Balance</p>
-                                <p className="text-sm font-black text-[#3bc117]">{wallet.mainBalance.toFixed(2)}</p>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            {/* Scope UI Overlay */}
+            {/* Scope UI Overlay (ENHANCED) */}
             <AnimatePresence>
             {showScopeUI && (
                 <motion.div 
@@ -1924,36 +1991,30 @@ const BirdShooting = () => {
                     exit={{opacity: 0}}
                     className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center"
                 >
-                     {/* Scope Crosshair */}
-                    <div className="w-full h-full border-[50px] border-black/80 rounded-full absolute inset-0 mix-blend-multiply"></div>
+                     {/* Scope Crosshair Mask */}
+                    <div className="w-full h-full border-[15vw] md:border-[10vw] border-black/90 rounded-full absolute inset-0 mix-blend-multiply"></div>
                     
-                    <div className="absolute bottom-10 right-10 flex flex-col gap-4 pointer-events-auto">
+                    {/* Pro Scoped Reticle (2D) */}
+                    <div className="relative flex items-center justify-center pointer-events-none">
+                        {/* Outer Ring */}
+                        <div className="w-[60vh] h-[60vh] border border-[#3bc117]/20 rounded-full"></div>
+                        {/* Middle Ring */}
+                        <div className="absolute w-[30vh] h-[30vh] border border-[#3bc117]/40 rounded-full"></div>
+                        {/* Main Cross */}
+                        <div className="absolute w-[80vh] h-[1px] bg-[#3bc117]/30"></div>
+                        <div className="absolute h-[80vh] w-[1px] bg-[#3bc117]/30"></div>
+                        {/* Center Dot */}
+                        <div className="absolute w-1.5 h-1.5 bg-red-500 rounded-full shadow-[0_0_10px_red]"></div>
+                    </div>
+
+                    {/* Exit Button Only in Scoped UI */}
+                    <div className="absolute bottom-6 right-20 md:bottom-10 md:right-32 z-[80] pointer-events-auto">
                         <button 
-                            onMouseDown={(e) => { e.stopPropagation(); handleLoad(); }}
-                            onMouseUp={(e) => { e.stopPropagation(); handleShoot(); }}
-                            onTouchStart={(e) => { e.stopPropagation(); handleLoad(); }}
-                            onTouchEnd={(e) => { e.stopPropagation(); handleShoot(); }}
-                            className="w-20 h-20 md:w-24 md:h-24 bg-orange-600 rounded-full border-4 border-orange-400 shadow-[0_0_50px_rgba(255,165,0,0.5)] active:scale-95 transition-transform flex flex-col items-center justify-center font-black text-[10px] charge-btn"
+                            onClick={handleToggleScope}
+                            className="w-14 h-14 md:w-20 md:h-20 bg-red-500/20 backdrop-blur-md border-2 border-red-500/50 rounded-full flex items-center justify-center font-black text-[8px] md:text-[10px] text-red-500 active:scale-90 transition-all shadow-2xl"
                         >
-                            <Zap className="w-6 h-6 mb-1" />
-                            {drawPower > 0 ? `${Math.round(drawPower * 100)}%` : 'CHARGE'}
+                            EXIT
                         </button>
-
-                        <div className="flex gap-4">
-                            <button 
-                                onMouseDown={(e) => { e.stopPropagation(); handleCancel(); }}
-                                className="w-16 h-16 md:w-20 md:h-20 bg-gray-800 rounded-full border-4 border-gray-600 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-gray-400 cancel-btn"
-                            >
-                                CANCEL
-                            </button>
-
-                            <button 
-                                onMouseDown={(e) => { e.stopPropagation(); handleToggleScope(); }}
-                                className="w-16 h-16 md:w-20 md:h-20 bg-[#3bc117] rounded-full border-4 border-[#3bc117]/50 shadow-xl active:scale-90 transition-transform flex items-center justify-center font-black text-[10px] text-black exit-btn"
-                            >
-                                EXIT
-                            </button>
-                        </div>
                     </div>
                 </motion.div>
             )}
@@ -1987,11 +2048,9 @@ const BirdShooting = () => {
             >
                 {/* Instruction Overlay */}
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-[10px] font-black pointer-events-none text-center uppercase tracking-widest bg-black/20 px-6 py-2 rounded-full backdrop-blur-sm">
-                    DRAG LEFT TO DRAW • DRAG RIGHT TO AIM • RELEASE TO SHOOT
+                    DRAG LEFT TO DRAW • RELEASE TO HOLD • DRAG RIGHT TO AIM • TAP LEFT TO SHOOT
                 </div>
             </div>
-          </div>
-        )}
 
         {/* Results State */}
         <AnimatePresence>

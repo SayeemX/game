@@ -139,6 +139,7 @@ const chargeUserSession = async (userId, io) => {
         }
 
         user.wallet.mainBalance -= SESSION_CHARGE_AMOUNT;
+        user.wallet.totalSpent += SESSION_CHARGE_AMOUNT;
         await user.save();
 
         session.totalCharged = (session.totalCharged || 0) + SESSION_CHARGE_AMOUNT;
@@ -193,9 +194,11 @@ io.on('connection', (socket) => {
 
             // Deduct Entry Fee
             user.wallet.mainBalance -= entryFee;
+            user.wallet.totalSpent += entryFee;
             
             // Deduct Initial Session Charge (0.1 TRX)
             user.wallet.mainBalance -= SESSION_CHARGE_AMOUNT;
+            user.wallet.totalSpent += SESSION_CHARGE_AMOUNT;
             await user.save();
 
             const weaponKey = user.inventory.equippedWeapon || 'basic_bow';

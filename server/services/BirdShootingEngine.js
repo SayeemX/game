@@ -103,7 +103,8 @@ class BirdShootingEngine {
     if (!game || game.status !== 'active') return { valid: false };
 
     game.shots++;
-    const { x, y, angle, power, birdId } = shotData;
+    const { x, y, birdId } = shotData;
+    const elapsed = (Date.now() - game.startTime) / 1000;
 
     let hitBird = null;
 
@@ -111,12 +112,19 @@ class BirdShootingEngine {
     if (birdId !== undefined && birdId !== null) {
         const bird = game.birds.find(b => b.id === birdId);
         if (bird && bird.alive) {
-            // Add distance validation to prevent spoofing
-            const dx = bird.x - x;
-            const dy = bird.y - y;
+            // Calculate Current X Position (Looping -60 to 60 on client, mapped to 0-100 on server)
+            // Client: initialX = data.x - 50. velocity = config.speed * 2.
+            const initialXClient = bird.x - 50;
+            const distanceTravelled = bird.speed * 2 * elapsed;
+            const currentXClient = ((initialXClient + 60 + distanceTravelled) % 120) - 60;
+            const currentXServer = currentXClient + 50;
+
+            const dx = currentXServer - x;
+            const dy = bird.y - y; // Y is relatively static
             const distance = Math.sqrt(dx * dx + dy * dy);
+            
             // Allow some margin for network latency/physics diffs
-            const validationRadius = (this.birdTypes[bird.type].size / 5); 
+            const validationRadius = (this.birdTypes[bird.type].size / 5) + 5; 
             
             if (distance <= validationRadius) {
                 hitBird = bird;
@@ -126,16 +134,20 @@ class BirdShootingEngine {
         }
     } 
     
-    // 2. Fallback: Hitbox Validation
+    // 2. Fallback: Hitbox Validation (Check all birds at their current positions)
     if (!hitBird) {
         for (const bird of game.birds) {
             if (!bird.alive) continue;
             
-            const dx = bird.x - x;
+            const initialXClient = bird.x - 50;
+            const distanceTravelled = bird.speed * 2 * elapsed;
+            const currentXClient = ((initialXClient + 60 + distanceTravelled) % 120) - 60;
+            const currentXServer = currentXClient + 50;
+
+            const dx = currentXServer - x;
             const dy = bird.y - y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // Scaled radius for coordinate space
             const hitRadius = (this.birdTypes[bird.type].size / 10);
             
             if (distance <= hitRadius) {

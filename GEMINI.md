@@ -126,6 +126,18 @@ Fix22: Clamped vertical camera pitch to +/- 80 degrees to prevent inversion.
 Fix23: Integrated charge meter with spring animation and dynamic bowstring deformation based on draw power.
 Fix24: Replaced image-based environment with a fully procedural Three.js system including dynamic Sky (Rayleigh scattering), instanced grass/flowers for high-performance vegetation, and generated billboard clouds. Removed dependency on external skybox textures.
 Fix25: Resolved mobile responsiveness issue on `/bird-shooting` by removing fixed viewport constraints in `App.jsx` and `BirdShooting.jsx`, enabling lobby scrolling and optimizing element scaling for small screens.
+Fix40: Successfully deployed all updates to GitHub repository.
+Fix41: Re-engineered shooting logic: Drag-to-Draw, Release-to-Hold, and Tap-to-Shoot for enhanced precision.
+Fix42: Repositioned Scope and Inventory buttons to the right side for better ergonomics and simplified the Inventory button to icon-only.
+Fix43: Moved Zoom controls to the absolute right edge and optimized Scoped UI.
+Fix44: Implemented automatic unscope and camera FOV/zoom reset after arrow impact (hit or ground).
+Fix45: Added a pro 2D reticle overlay for scoped mode to ensure high visibility and aiming precision on all screens.
+Fix46: Optimized scoped UI exit button positioning for better mobile accessibility.
+Fix47: Implemented cinematic "Follow Cam" system that tracks arrow trajectory post-shot with dynamic FOV zooming and persistent impact viewing before resetting to player perspective.
+Fix48: Optimized server-side hit validation in `BirdShootingEngine.js` by accounting for elapsed time and wrap-around movement, ensuring authoritative synchronization.
+Fix49: Standardized wallet transaction logging to include session charges and entry fees in `user.wallet.totalSpent`.
+Fix50: Refined cinematic camera resets and improved Follow-Cam viewing angles for a more professional sniper experience.
+Fix51: Refined "Skip" logic: Marks the flying arrow as 'skipped' (guaranteed miss) and immediately resets the camera and player state for the next shot, while allowing the arrow to continue its physical trajectory visually.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
