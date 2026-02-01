@@ -140,9 +140,10 @@ const chargeUserSession = async (userId, io) => {
 
         if (user.wallet.mainBalance < SESSION_CHARGE_AMOUNT) {
             io.to(session.socketId).emit('error', { 
-                message: 'Insufficient balance for session. Please refill.',
+                message: 'Insufficient balance for session. Please recharge or exit.',
                 type: 'SESSION_EXPIRED'
             });
+            // Do NOT auto-finalize here; let the client or explicit recharge request handle it.
             return false;
         }
 
@@ -153,23 +154,29 @@ const chargeUserSession = async (userId, io) => {
         // Add to Website TRX Pool
         await Game.findOneAndUpdate({}, { $inc: { trxPool: SESSION_CHARGE_AMOUNT } });
 
-        session.totalCharged = (session.totalCharged || 0) + SESSION_CHARGE_AMOUNT;
-        session.lastChargeTime = Date.now();
+        // Double check session still exists after async DB calls
+        const currentSession = activeSessions.get(userId);
+        if (!currentSession || currentSession.matchId !== session.matchId) {
+            return false;
+        }
+
+        currentSession.totalCharged = (currentSession.totalCharged || 0) + SESSION_CHARGE_AMOUNT;
+        currentSession.lastChargeTime = Date.now();
         
         // Increment interval for next time (Add 1 minute)
-        session.intervalMinutes += 1;
-        const nextDurationMs = session.intervalMinutes * 60 * 1000;
+        currentSession.intervalMinutes += 1;
+        const nextDurationMs = currentSession.intervalMinutes * 60 * 1000;
 
         // Schedule next charge
-        session.timer = setTimeout(async () => {
+        currentSession.timer = setTimeout(async () => {
             await chargeUserSession(userId, io);
         }, nextDurationMs);
 
-        io.to(session.socketId).emit('balance_update', { 
+        io.to(currentSession.socketId).emit('balance_update', { 
             mainBalance: user.wallet.mainBalance,
-            sessionCharged: session.totalCharged,
+            sessionCharged: currentSession.totalCharged,
             nextChargeTime: Date.now() + nextDurationMs,
-            intervalMinutes: session.intervalMinutes
+            intervalMinutes: currentSession.intervalMinutes
         });
         
         await Transaction.create({
@@ -177,7 +184,7 @@ const chargeUserSession = async (userId, io) => {
             type: 'game_bet',
             amount: SESSION_CHARGE_AMOUNT,
             currency: 'TRX',
-            description: `Bird Shooting Session Charge (${session.intervalMinutes-1} min) - Match: ${session.matchId}`,
+            description: `Bird Shooting Session Charge (${currentSession.intervalMinutes-1} min) - Match: ${currentSession.matchId}`,
             status: 'completed'
         });
 
@@ -321,6 +328,21 @@ io.on('connection', (socket) => {
             socket.emit('bird_shoot:shot_result', { ...result, remainingAmmo: game.ammo });
         } else {
             socket.emit('error', { message: 'Out of ammo!' });
+        }
+    });
+
+    socket.on('bird_shoot:extend_session', async () => {
+        const userId = socket.user.id;
+        const session = activeSessions.get(userId);
+        
+        if (!session) {
+            return socket.emit('error', { message: 'No active session found' });
+        }
+
+        // Attempt manual charge
+        const success = await chargeUserSession(userId, io);
+        if (!success) {
+            socket.emit('bird_shoot:extend_failed', { message: 'Insufficient balance to extend session' });
         }
     });
 

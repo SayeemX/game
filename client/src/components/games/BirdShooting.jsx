@@ -754,9 +754,8 @@ class BowSystem3D {
       
       this.rotationVelocity.multiplyScalar(this.damping);
 
-      // Clamp vertical pitch: -1.4 (look up) to 0.3 (look down slightly)
-      // This prevents looking at feet while allowing ground targeting at distance
-      this.game.camera.rotation.x = Math.max(-1.4, Math.min(0.3, this.game.camera.rotation.x));
+      // Relaxed downward pitch to 1.0 to allow more movement while still preventing extreme downward look
+      this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.0, this.game.camera.rotation.x));
       this.game.camera.rotation.order = 'YXZ';
 
       // 2. Smooth Zoom
@@ -1198,8 +1197,8 @@ class HuntingGame3D {
           if (this.bowSystem.keys['KeyA'] || this.bowSystem.keys['ArrowLeft']) this.camera.rotation.y += aimSpeed;
           if (this.bowSystem.keys['KeyD'] || this.bowSystem.keys['ArrowRight']) this.camera.rotation.y -= aimSpeed;
 
-          // Clamp downward pitch to 0.3 to keep target at a distance from ground
-          this.camera.rotation.x = Math.max(-1.45, Math.min(0.3, this.camera.rotation.x));
+          // Relaxed downward pitch clamp to 1.0
+          this.camera.rotation.x = Math.max(-1.45, Math.min(1.0, this.camera.rotation.x));
           this.camera.rotation.order = 'YXZ';
       } else if (this.activeTrackingArrow) {
           const arrow = this.activeTrackingArrow;
@@ -1381,6 +1380,8 @@ const BirdShooting = () => {
   const [buyingAmmo, setBuyingAmmo] = useState(false);
   const [purchaseSuccess, setPurchaseSuccess] = useState(null);
   const [error, setError] = useState(null);
+  const [isSessionExpired, setIsSessionExpired] = useState(false);
+  const [showReload, setShowReload] = useState(false);
 
   const gameContainerRef = useRef(null);
   const gameInstanceRef = useRef(null);
@@ -1409,6 +1410,13 @@ const BirdShooting = () => {
       setTimeout(() => setHitMessage(null), 2000);
   };
 
+  const handleReload = () => {
+      if (!socket) return;
+      socket.emit('bird_shoot:extend_session');
+      // Optimistically hide reload, will show again if error/fail
+      setShowReload(false);
+  };
+
   // Socket Listeners
   useEffect(() => {
     if (!socket) return;
@@ -1422,6 +1430,8 @@ const BirdShooting = () => {
         setGameState('playing');
         setSessionTime(0);
         setLoading(false);
+        setIsSessionExpired(false);
+        setShowReload(false);
     };
 
     const handleShotResult = (res) => {
@@ -1449,6 +1459,8 @@ const BirdShooting = () => {
         }
         if (data.nextChargeTime) {
             setNextChargeTime(data.nextChargeTime);
+            setShowReload(false); // Hide reload on successful charge
+            setIsSessionExpired(false);
         }
         if (data.intervalMinutes) {
             setCurrentIntervalMinutes(data.intervalMinutes);
@@ -1456,14 +1468,26 @@ const BirdShooting = () => {
     };
 
     const handleError = (err) => {
-        setError(err.message || 'An error occurred');
+        if (err.type === 'SESSION_EXPIRED') {
+            setIsSessionExpired(true);
+            setShowReload(true);
+        } else {
+            setError(err.message || 'An error occurred');
+        }
         setLoading(false);
+    };
+
+    const handleExtendFailed = (data) => {
+        // If manual extension fails (e.g. no balance), end game
+        setError(data.message || "Failed to extend session");
+        setTimeout(() => handleEndGame(), 1500);
     };
 
     socket.on('bird_shoot:session', handleSession);
     socket.on('bird_shoot:shot_result', handleShotResult);
     socket.on('bird_shoot:game_over', handleGameOver);
     socket.on('balance_update', handleBalanceUpdate);
+    socket.on('bird_shoot:extend_failed', handleExtendFailed);
     socket.on('error', handleError);
 
     return () => {
@@ -1471,6 +1495,7 @@ const BirdShooting = () => {
       socket.off('bird_shoot:shot_result', handleShotResult);
       socket.off('bird_shoot:game_over', handleGameOver);
       socket.off('balance_update', handleBalanceUpdate);
+      socket.off('bird_shoot:extend_failed', handleExtendFailed);
       socket.off('error', handleError);
     };
   }, [socket, dispatch]);
@@ -1537,6 +1562,7 @@ const BirdShooting = () => {
               const diff = nextChargeTime - now;
               if (diff <= 0) {
                   setTimeLeftStr("00:00");
+                  if (!isSessionExpired) setShowReload(true);
               } else {
                   const mins = Math.floor(diff / 60000);
                   const secs = Math.floor((diff % 60000) / 1000);
@@ -1545,7 +1571,7 @@ const BirdShooting = () => {
           }, 1000);
       }
       return () => clearInterval(interval);
-  }, [gameState, nextChargeTime]);
+  }, [gameState, nextChargeTime, isSessionExpired]);
 
   useEffect(() => {
       let interval;
@@ -1871,33 +1897,46 @@ const BirdShooting = () => {
                         <p className="text-sm md:text-4xl font-black text-white hud-value leading-none">{remainingAmmo}</p>
                     </div>
                     <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center min-w-[80px] md:min-w-[120px] relative overflow-hidden">
-                        {/* Analog Clock Background Effect */}
-                        <div className="absolute inset-0 opacity-10">
-                            <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 100 100">
-                                <circle
-                                    cx="50" cy="50" r="45"
-                                    fill="none"
-                                    stroke="#3bc117"
-                                    strokeWidth="10"
-                                    strokeDasharray="282.7"
-                                    strokeDashoffset={(() => {
-                                        if (!nextChargeTime) return 0;
-                                        const now = Date.now();
-                                        const total = currentIntervalMinutes * 60000;
-                                        const remaining = Math.max(0, nextChargeTime - now);
-                                        return 282.7 * (1 - remaining / total);
-                                    })()}
-                                />
-                            </svg>
-                        </div>
-                        
-                        <p className="text-[6px] md:text-[9px] text-orange-500 font-black uppercase hud-label tracking-tighter flex items-center gap-1 z-10">
-                            <Clock className="w-2 h-2 md:w-3 md:h-3 animate-pulse" />
-                            Session
-                        </p>
-                        <p className="text-sm md:text-4xl font-black text-white hud-value leading-none font-mono z-10">
-                            {timeLeftStr}
-                        </p>
+                        {(showReload || isSessionExpired) ? (
+                            <button 
+                                onClick={handleReload}
+                                className="w-full h-full absolute inset-0 bg-red-600/80 hover:bg-red-500 flex flex-col items-center justify-center z-20 animate-pulse transition-colors"
+                            >
+                                <RotateCw className="w-4 h-4 md:w-6 md:h-6 text-white mb-1" />
+                                <span className="text-[8px] md:text-[10px] font-black uppercase text-white tracking-widest">RELOAD</span>
+                                <span className="text-[6px] md:text-[8px] font-bold text-white/80">0.1 TRX</span>
+                            </button>
+                        ) : (
+                            <>
+                                {/* Analog Clock Background Effect */}
+                                <div className="absolute inset-0 opacity-10">
+                                    <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 100 100">
+                                        <circle
+                                            cx="50" cy="50" r="45"
+                                            fill="none"
+                                            stroke="#3bc117"
+                                            strokeWidth="10"
+                                            strokeDasharray="282.7"
+                                            strokeDashoffset={(() => {
+                                                if (!nextChargeTime) return 0;
+                                                const now = Date.now();
+                                                const total = currentIntervalMinutes * 60000;
+                                                const remaining = Math.max(0, nextChargeTime - now);
+                                                return 282.7 * (1 - remaining / total);
+                                            })()}
+                                        />
+                                    </svg>
+                                </div>
+                                
+                                <p className="text-[6px] md:text-[9px] text-orange-500 font-black uppercase hud-label tracking-tighter flex items-center gap-1 z-10">
+                                    <Clock className="w-2 h-2 md:w-3 md:h-3 animate-pulse" />
+                                    Session
+                                </p>
+                                <p className="text-sm md:text-4xl font-black text-white hud-value leading-none font-mono z-10">
+                                    {timeLeftStr}
+                                </p>
+                            </>
+                        )}
                     </div>
                     <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
                         <p className="text-[6px] md:text-[9px] text-yellow-500 font-black uppercase hud-label tracking-tighter">Zoom</p>
@@ -1905,21 +1944,47 @@ const BirdShooting = () => {
                     </div>
                 </div>
 
-                <div className="flex gap-2 pointer-events-auto items-center">
-                    {isTracking && (
+                <div className="flex flex-col items-end gap-4 pointer-events-auto">
+                    <div className="flex gap-2 items-center">
+                        {isTracking && (
+                            <button 
+                                onClick={handleSkip}
+                                className="bg-[#3bc117] text-black px-4 py-1.5 md:px-6 md:py-3 rounded-lg md:rounded-xl font-black text-[8px] md:text-xs uppercase tracking-[0.2em] shadow-[0_0_20px_rgba(59,193,23,0.4)] hover:scale-105 active:scale-95 transition-all"
+                            >
+                                Skip
+                            </button>
+                        )}
                         <button 
-                            onClick={handleSkip}
-                            className="bg-[#3bc117] text-black px-4 py-1.5 md:px-6 md:py-3 rounded-lg md:rounded-xl font-black text-[8px] md:text-xs uppercase tracking-[0.2em] shadow-[0_0_20px_rgba(59,193,23,0.4)] hover:scale-105 active:scale-95 transition-all"
+                            onClick={() => handleEndGame()}
+                            className="bg-red-500/20 hover:bg-red-500/40 text-red-500 px-3 py-1.5 md:p-3 rounded-lg md:rounded-xl border border-red-500/30 backdrop-blur-md font-black text-[8px] md:text-xs uppercase tracking-widest shadow-lg extract-btn"
                         >
-                            Skip
+                            Extract
                         </button>
-                    )}
-                    <button 
-                        onClick={() => handleEndGame()}
-                        className="bg-red-500/20 hover:bg-red-500/40 text-red-500 px-3 py-1.5 md:p-3 rounded-lg md:rounded-xl border border-red-500/30 backdrop-blur-md font-black text-[8px] md:text-xs uppercase tracking-widest shadow-lg extract-btn"
-                    >
-                        Extract
-                    </button>
+                    </div>
+
+                    {/* Vertical Zoom Bar (Below Extract) */}
+                    <AnimatePresence>
+                        {isScoped && (
+                            <motion.div 
+                                initial={{ opacity: 0, y: -20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -20 }}
+                                className="flex flex-col items-center gap-2 z-30 zoom-bar"
+                            >
+                                <div className="bg-black/40 backdrop-blur-md border border-white/10 p-1.5 rounded-xl flex flex-col gap-2 shadow-2xl">
+                                    {[8, 6, 4, 2].map((z, i) => (
+                                        <button
+                                            key={z}
+                                            onClick={() => handleSetZoomIndex(3-i)}
+                                            className={`w-10 h-10 md:w-12 md:h-12 rounded-lg font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black' : 'bg-black/60 text-gray-400 hover:text-white'}`}
+                                        >
+                                            {z}x
+                                        </button>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
             </div>
 
@@ -1937,30 +2002,6 @@ const BirdShooting = () => {
                     </div>
                 </div>
             )}
-
-            {/* Vertical Zoom Bar (Far Right) */}
-            <AnimatePresence>
-                {isScoped && (
-                    <motion.div 
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-30 zoom-bar"
-                    >
-                        <div className="bg-black/40 backdrop-blur-md border border-white/10 p-1.5 rounded-xl flex flex-col gap-2 shadow-2xl">
-                            {[8, 6, 4, 2].map((z, i) => (
-                                <button
-                                    key={z}
-                                    onClick={() => handleSetZoomIndex(3-i)}
-                                    className={`w-10 h-10 md:w-12 md:h-12 rounded-lg font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black' : 'bg-black/60 text-gray-400 hover:text-white'}`}
-                                >
-                                    {z}x
-                                </button>
-                            ))}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
 
             {/* Hit Confirmation Message */}
             <AnimatePresence>
@@ -2073,8 +2114,8 @@ const BirdShooting = () => {
                     exit={{opacity: 0}}
                     className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center"
                 >
-                     {/* Scope Crosshair Mask - Thicker Borders for focus */}
-                    <div className="w-full h-full border-[25vw] md:border-[20vw] border-black rounded-full absolute inset-0 mix-blend-multiply"></div>
+                     {/* Scope Crosshair Mask - Thinner Borders for better visibility */}
+                    <div className="w-full h-full border-[12vw] md:border-[10vw] border-black rounded-full absolute inset-0 mix-blend-multiply"></div>
                     
                     {/* Pro Scoped Reticle (2D) */}
                     <div className="relative flex items-center justify-center pointer-events-none scale-[1.2] md:scale-[1.5]">

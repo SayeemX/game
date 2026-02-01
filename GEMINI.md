@@ -140,6 +140,7 @@ Fix50: Refined cinematic camera resets and improved Follow-Cam viewing angles fo
 Fix51: Refined "Skip" logic: Marks the flying arrow as 'skipped' (guaranteed miss) and immediately resets the camera and player state for the next shot, while allowing the arrow to continue its physical trajectory visually.
 Fix52: Final audit of game logic and successful deployment of refined mobile ergonomics.
 Fix53: Added "Retype Password" field to registration page with matching validation logic to ensure credential integrity.
+Fix54: Implemented manual "Reload Session" functionality in BirdShooting game. Added server-side `bird_shoot:extend_session` handler and client-side UI to display a Reload button when the session timer expires or auto-charge fails. The reload action manually triggers the session extension and billing logic.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
