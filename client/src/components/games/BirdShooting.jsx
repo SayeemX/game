@@ -179,12 +179,13 @@ class BirdSystem3D {
   constructor(game, serverBirds) {
     this.game = game;
     this.birds = [];
+    this.activeBirdIndex = 0;
     this.birdConfigs = {
-      sparrow: { speed: 1.5, size: 1.2, points: 10, asset: 'sparrow' },
-      pigeon: { speed: 1.2, size: 1.4, points: 15, asset: 'pigeon' },
-      crow: { speed: 2.0, size: 1.5, points: 25, asset: 'pigeon' },
-      eagle: { speed: 3.0, size: 2.2, points: 50, asset: 'eagle' },
-      phoenix: { speed: 4.5, size: 2.5, points: 150, asset: 'rare' }
+      sparrow: { speed: 1.8, size: 2.8, points: 10, asset: 'sparrow' },
+      pigeon: { speed: 1.5, size: 3.2, points: 15, asset: 'pigeon' },
+      crow: { speed: 2.5, size: 3.5, points: 25, asset: 'pigeon' },
+      eagle: { speed: 3.5, size: 5.0, points: 50, asset: 'eagle' },
+      phoenix: { speed: 5.5, size: 6.0, points: 150, asset: 'rare' }
     };
     
     this.textureLoader = new THREE.TextureLoader();
@@ -196,60 +197,130 @@ class BirdSystem3D {
     
     const basename = window.location.hostname.includes('github.io') ? window.location.pathname.split('/')[1] ? `/${window.location.pathname.split('/')[1]}` : '' : '';
 
-    serverBirds.forEach((data) => {
+    serverBirds.forEach((data, index) => {
       const config = this.birdConfigs[data.type] || this.birdConfigs.sparrow;
       
       const texturePath = `${basename}/assets/birds/${config.asset}/fly.png`;
       const texture = this.textureLoader.load(texturePath);
       
-      // Use Mesh with PlaneGeometry instead of Sprite to allow Y-axis flipping
       const geometry = new THREE.PlaneGeometry(config.size, config.size);
       const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(geometry, material);
       
-      // Face flight direction (birds fly left-to-right by default speed > 0)
       if (config.speed < 0) mesh.rotation.y = Math.PI; 
 
-      // Map server 0-100 coordinates to world -50 to 50
-      mesh.position.set(
-        (data.x - 50),
-        data.y + 10,
-        -40 - (Math.random() * 40)
-      );
+      // Initial Position (Start off-screen for sequential entry)
+      const startX = -70; 
+      const baseY = data.y + 10;
+      mesh.position.set(startX, baseY, -40 - (Math.random() * 20));
       
+      // Physics Body
+      const body = new CANNON.Body({
+        mass: 1.0,
+        position: new CANNON.Vec3(mesh.position.x, mesh.position.y, mesh.position.z),
+        shape: new CANNON.Sphere(config.size / 2),
+        type: CANNON.Body.KINEMATIC, // Kinematic during flight
+        linearDamping: 0.05,
+        angularDamping: 0.05
+      });
+      
+      this.game.world.addBody(body);
+
       const bird = {
         mesh: mesh,
+        body: body,
         type: config,
-        velocity: new THREE.Vector3(config.speed * 2, 0, 0),
-        active: true,
+        baseY: baseY,
+        velocity: new THREE.Vector3(data.speed * 4, 0, 0),
+        active: index === 0, // Only first bird is active initially
         serverId: data.id,
-        isDying: false
+        isDying: false,
+        spawned: index === 0
       };
       
       this.birds.push(bird);
-      this.game.scene.add(bird.mesh);
+      if (bird.active) this.game.scene.add(bird.mesh);
     });
   }
 
   updateFlock(deltaTime) {
     const time = Date.now() * 0.001;
-    this.birds.forEach((bird) => {
-      if (!bird.active || bird.isDying) return;
+    
+    // Process only the active bird
+    const bird = this.birds[this.activeBirdIndex];
+    if (!bird) return;
+
+    if (bird.isDying) {
+      // Sync mesh with physics body
+      bird.mesh.position.copy(bird.body.position);
+      bird.mesh.quaternion.copy(bird.body.quaternion);
       
-      bird.mesh.position.x += bird.velocity.x * deltaTime;
-      if (bird.mesh.position.x > 60) bird.mesh.position.x = -60;
+      // Air resistance simulation (manual dampening)
+      bird.body.velocity.scale(0.98, bird.body.velocity);
       
-      // Flapping Animation: Oscillate scale to simulate wing movement
-      const flap = Math.sin(time * (10 + bird.type.speed * 2));
-      bird.mesh.scale.y = 1.0 + flap * 0.2;
+      if (bird.mesh.position.y < -10) {
+        bird.active = false;
+        this.game.scene.remove(bird.mesh);
+        this.game.world.removeBody(bird.body);
+        this.spawnNext();
+      }
+      return;
+    }
+
+    if (bird.active) {
+      // Move Kinematic Body
+      bird.body.position.x += bird.velocity.x * deltaTime;
       
-      // Subtle bobbing
-      bird.mesh.position.y += Math.sin(time * 2) * 0.005;
+      // Ballistic-like bobbing (intentional flight path)
+      bird.body.position.y = bird.baseY + Math.sin(time * 2 + bird.serverId) * 3;
       
-      // Face movement direction
+      // Sync mesh
+      bird.mesh.position.copy(bird.body.position);
+      
+      // Out of bounds check
+      if (bird.mesh.position.x > 80) {
+        bird.active = false;
+        this.game.scene.remove(bird.mesh);
+        this.game.world.removeBody(bird.body);
+        this.spawnNext();
+      }
+
+      // Flapping Animation
+      const flap = Math.sin(time * (15 + bird.type.speed * 3));
+      bird.mesh.scale.y = 1.0 + flap * 0.3;
+      
+      // Look direction
       bird.mesh.lookAt(bird.mesh.position.clone().add(bird.velocity));
-      bird.mesh.rotateY(Math.PI / 2); // Correct orientation for PlaneGeometry
-    });
+      bird.mesh.rotateY(Math.PI / 2);
+    }
+  }
+
+  spawnNext() {
+    this.activeBirdIndex++;
+    if (this.activeBirdIndex < this.birds.length) {
+      const nextBird = this.birds[this.activeBirdIndex];
+      nextBird.active = true;
+      nextBird.spawned = true;
+      this.game.scene.add(nextBird.mesh);
+    }
+  }
+
+  onHit(bird, impactVelocity) {
+    if (bird.isDying) return;
+    
+    bird.isDying = true;
+    bird.body.type = CANNON.Body.DYNAMIC; // Enable gravity
+    
+    // Apply ballistic impact force
+    const impulse = new CANNON.Vec3(impactVelocity.x, impactVelocity.y + 5, impactVelocity.z);
+    bird.body.applyImpulse(impulse, bird.body.position);
+    
+    // Random death spin
+    bird.body.angularVelocity.set(
+      Math.random() * 10 - 5,
+      Math.random() * 10 - 5,
+      Math.random() * 10 - 5
+    );
   }
 
   createFeatherExplosion(position) {
@@ -484,6 +555,13 @@ class BowSystem3D {
              this.rotationVelocity.y -= movementY * 0.0002;
         }
     };
+
+    this._onWheel = (e) => {
+        if (!this.isScoped && !this.isTracking) return;
+        e.preventDefault();
+        const dir = e.deltaY < 0 ? 1 : -1;
+        this.cycleZoom(dir);
+    };
     
     element.addEventListener('mousedown', (e) => {
         if(e.button === 0) this._onMouseDown(e);
@@ -492,6 +570,7 @@ class BowSystem3D {
         }
     });
     element.addEventListener('mouseup', this._onMouseUp);
+    element.addEventListener('wheel', this._onWheel, { passive: false });
     document.addEventListener('mousemove', this._onMouseMove);
 
     // --- Mobile Touch Controls (Split Screen) ---
@@ -876,6 +955,7 @@ class BowSystem3D {
       const element = this.game.container;
       element.removeEventListener('mousedown', this._onMouseDown);
       element.removeEventListener('mouseup', this._onMouseUp);
+      element.removeEventListener('wheel', this._onWheel);
       element.removeEventListener('touchstart', this._onTouchStart);
       element.removeEventListener('touchend', this._onTouchEnd);
       element.removeEventListener('touchmove', this._onTouchMove);
@@ -1275,11 +1355,8 @@ class HuntingGame3D {
           this.birdSystem.birds.forEach(bird => {
               if (bird.active && !bird.isDying) {
                   const dist = arrow.mesh.position.distanceTo(bird.mesh.position);
-                  if (dist < bird.type.size + 0.5) {
-                      bird.isDying = true;
-                      bird.deathVelocity = arrow.body.velocity.clone().scale(0.1);
+                  if (dist < bird.type.size / 2 + 1.0) {
                       this.onScore(bird.type.points);
-                      
                       this.haptics.trigger('hit');
                       this.audio.play('hit');
                       this.bowSystem.triggerHitMarker();
@@ -1296,6 +1373,7 @@ class HuntingGame3D {
                           });
                       }
 
+                      this.birdSystem.onHit(bird, arrow.body.velocity);
                       arrow.isActive = false;
                       this.world.removeBody(arrow.body);
                       bird.mesh.add(arrow.mesh);
@@ -1304,17 +1382,6 @@ class HuntingGame3D {
               }
           });
       }
-
-      this.birdSystem.birds.forEach(bird => {
-          if (bird.isDying) {
-              bird.mesh.position.y -= deltaTime * 15; 
-              bird.mesh.rotation.x += deltaTime * 10; 
-              if (bird.mesh.position.y < -1) {
-                  bird.active = false;
-                  this.scene.remove(bird.mesh);
-              }
-          }
-      });
 
       this.renderer.render(this.scene, this.camera);
   }

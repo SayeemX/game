@@ -4,11 +4,11 @@ class BirdShootingEngine {
   constructor() {
     this.activeGames = new Map();
     this.birdTypes = {
-      sparrow: { speed: 1.5, size: 20, points: 10, rarity: 1, health: 1 },
-      pigeon: { speed: 1.2, size: 25, points: 15, rarity: 2, health: 1 },
-      crow: { speed: 2.0, size: 30, points: 25, rarity: 3, health: 1 },
-      eagle: { speed: 3.0, size: 40, points: 50, rarity: 4, health: 1 },
-      phoenix: { speed: 4.0, size: 50, points: 150, rarity: 5, health: 1 }
+      sparrow: { speed: 1.8, size: 40, points: 10, rarity: 1, health: 1 },
+      pigeon: { speed: 1.5, size: 50, points: 15, rarity: 2, health: 1 },
+      crow: { speed: 2.5, size: 60, points: 25, rarity: 3, health: 1 },
+      eagle: { speed: 3.5, size: 80, points: 50, rarity: 4, health: 1 },
+      phoenix: { speed: 5.5, size: 100, points: 150, rarity: 5, health: 1 }
     };
 
     this.PHYSICS = {
@@ -86,8 +86,7 @@ class BirdShootingEngine {
         speed: config.speed * (1 + (level * 0.1)),
         health: config.health,
         points: config.points,
-        alive: true,
-        isLeader: i % 5 === 0 // Every 5th bird is a flock leader
+        alive: true
       });
     }
     return birds;
@@ -115,7 +114,7 @@ class BirdShootingEngine {
             // Calculate Current X Position (Looping -60 to 60 on client, mapped to 0-100 on server)
             // Client: initialX = data.x - 50. velocity = config.speed * 2.
             const initialXClient = bird.x - 50;
-            const distanceTravelled = bird.speed * 2 * elapsed;
+            const distanceTravelled = bird.speed * 4 * elapsed;
             const currentXClient = ((initialXClient + 60 + distanceTravelled) % 120) - 60;
             const currentXServer = currentXClient + 50;
 
@@ -140,7 +139,7 @@ class BirdShootingEngine {
             if (!bird.alive) continue;
             
             const initialXClient = bird.x - 50;
-            const distanceTravelled = bird.speed * 2 * elapsed;
+            const distanceTravelled = bird.speed * 4 * elapsed;
             const currentXClient = ((initialXClient + 60 + distanceTravelled) % 120) - 60;
             const currentXServer = currentXClient + 50;
 
