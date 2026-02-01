@@ -61,6 +61,7 @@ const gameSchema = new mongoose.Schema({
   },
   
   // General
+  trxPool: { type: Number, default: 0 },
   maintenance: { type: Boolean, default: false },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   updatedAt: { type: Date, default: Date.now }

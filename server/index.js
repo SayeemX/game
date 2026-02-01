@@ -80,6 +80,15 @@ mongoose.connect(MONGO_URI)
       ];
       await BirdWeapon.insertMany(initialWeapons);
     }
+
+    const gameCount = await Game.countDocuments();
+    if (gameCount === 0) {
+      console.log('🌱 Seeding initial game config...');
+      await Game.create({
+        trxPool: 0,
+        birdShooting: { entryFee: 10 }
+      });
+    }
   } catch (e) { console.error('Seeding failed:', e); }
 })
 .catch(err => {
@@ -117,10 +126,9 @@ io.use(async (socket, next) => {
 });
 
 // Track active sessions for charging
-const activeSessions = new Map(); // userId -> { startTime, lastChargeTime, socketId, totalCharged, matchId }
+const activeSessions = new Map(); // userId -> { startTime, lastChargeTime, socketId, totalCharged, matchId, intervalMinutes, timer }
 
-const SESSION_CHARGE_AMOUNT = 0.1; // Credits to deduct
-const SESSION_CHARGE_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const SESSION_CHARGE_AMOUNT = 0.1; 
 
 const chargeUserSession = async (userId, io) => {
     try {
@@ -142,22 +150,37 @@ const chargeUserSession = async (userId, io) => {
         user.wallet.totalSpent += SESSION_CHARGE_AMOUNT;
         await user.save();
 
+        // Add to Website TRX Pool
+        await Game.findOneAndUpdate({}, { $inc: { trxPool: SESSION_CHARGE_AMOUNT } });
+
         session.totalCharged = (session.totalCharged || 0) + SESSION_CHARGE_AMOUNT;
         session.lastChargeTime = Date.now();
+        
+        // Increment interval for next time (Add 1 minute)
+        session.intervalMinutes += 1;
+        const nextDurationMs = session.intervalMinutes * 60 * 1000;
 
+        // Schedule next charge
+        session.timer = setTimeout(async () => {
+            await chargeUserSession(userId, io);
+        }, nextDurationMs);
+
+        io.to(session.socketId).emit('balance_update', { 
+            mainBalance: user.wallet.mainBalance,
+            sessionCharged: session.totalCharged,
+            nextChargeTime: Date.now() + nextDurationMs,
+            intervalMinutes: session.intervalMinutes
+        });
+        
         await Transaction.create({
             userId: user._id,
             type: 'game_bet',
             amount: SESSION_CHARGE_AMOUNT,
             currency: 'TRX',
-            description: `Bird Shooting Session Charge (5 min) - Match: ${session.matchId}`,
+            description: `Bird Shooting Session Charge (${session.intervalMinutes-1} min) - Match: ${session.matchId}`,
             status: 'completed'
         });
 
-        io.to(session.socketId).emit('balance_update', { 
-            mainBalance: user.wallet.mainBalance,
-            sessionCharged: session.totalCharged 
-        });
         return true;
     } catch (err) {
         console.error('Session charge error:', err);
@@ -178,7 +201,7 @@ io.on('connection', (socket) => {
             // Clear any existing session/timer for this user
             const existingSession = activeSessions.get(userId);
             if (existingSession && existingSession.timer) {
-                clearInterval(existingSession.timer);
+                clearTimeout(existingSession.timer);
             }
 
             const user = await User.findById(userId);
@@ -200,6 +223,9 @@ io.on('connection', (socket) => {
             user.wallet.mainBalance -= SESSION_CHARGE_AMOUNT;
             user.wallet.totalSpent += SESSION_CHARGE_AMOUNT;
             await user.save();
+            
+            // Add to Website TRX Pool
+            await Game.findOneAndUpdate({}, { $inc: { trxPool: SESSION_CHARGE_AMOUNT } });
 
             const weaponKey = user.inventory.equippedWeapon || 'basic_bow';
             let weaponStats = { key: 'basic_bow', type: 'bow', damage: 1, perks: { windResistance: 0.1 } };
@@ -228,10 +254,13 @@ io.on('connection', (socket) => {
             game.ammo = ammoToLoad;
             game.ammoType = ammoType;
 
-            // Start Session Tracking
-            const sessionTimer = setInterval(async () => {
+            // Start Session Tracking (Initial 5 minutes)
+            const INITIAL_INTERVAL_MIN = 5;
+            const durationMs = INITIAL_INTERVAL_MIN * 60 * 1000;
+            
+            const sessionTimer = setTimeout(async () => {
                 await chargeUserSession(socket.user.id, io);
-            }, SESSION_CHARGE_INTERVAL);
+            }, durationMs);
 
             activeSessions.set(socket.user.id, {
                 startTime: Date.now(),
@@ -239,7 +268,8 @@ io.on('connection', (socket) => {
                 socketId: socket.id,
                 timer: sessionTimer,
                 totalCharged: SESSION_CHARGE_AMOUNT,
-                matchId: game.id
+                matchId: game.id,
+                intervalMinutes: INITIAL_INTERVAL_MIN
             });
 
             await Transaction.create({
@@ -264,8 +294,18 @@ io.on('connection', (socket) => {
             });
             
             socket.join(game.id);
-            socket.emit('bird_shoot:session', { ...game, sessionCharged: SESSION_CHARGE_AMOUNT });
-            socket.emit('balance_update', { mainBalance: user.wallet.mainBalance, sessionCharged: SESSION_CHARGE_AMOUNT });
+            socket.emit('bird_shoot:session', { 
+                ...game, 
+                sessionCharged: SESSION_CHARGE_AMOUNT,
+                nextChargeTime: Date.now() + durationMs,
+                intervalMinutes: INITIAL_INTERVAL_MIN
+            });
+            socket.emit('balance_update', { 
+                mainBalance: user.wallet.mainBalance, 
+                sessionCharged: SESSION_CHARGE_AMOUNT,
+                nextChargeTime: Date.now() + durationMs,
+                intervalMinutes: INITIAL_INTERVAL_MIN
+            });
         } catch (err) {
             console.error('Join Error:', err);
             socket.emit('error', { message: 'Server error joining match' });
@@ -290,7 +330,7 @@ io.on('connection', (socket) => {
         // Clear Session Timer
         const session = activeSessions.get(userId);
         if (session) {
-            clearInterval(session.timer);
+            if (session.timer) clearTimeout(session.timer);
             session.endTime = Date.now();
             console.log(`📊 Match ${gameId} finalized. Duration: ${Math.round((session.endTime - session.startTime)/1000)}s. Total Charged: ${session.totalCharged} TRX`);
         }

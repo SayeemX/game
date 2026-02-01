@@ -5,7 +5,7 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
-import { Target, Trophy, Zap, Gamepad2, AlertCircle, ShieldCheck, Home, ShoppingBag, User as UserIcon, Coins, RotateCw, ChevronUp, ChevronDown } from 'lucide-react';
+import { Target, Trophy, Zap, Gamepad2, AlertCircle, ShieldCheck, Home, ShoppingBag, User as UserIcon, Coins, RotateCw, ChevronUp, ChevronDown, Clock } from 'lucide-react';
 import { AuthContext } from '../../context/AuthContext';
 import { updateWallet, setUserData, updateInventory } from '../../redux/slices/userSlice';
 import { shopAPI } from '../../services/api';
@@ -754,7 +754,9 @@ class BowSystem3D {
       
       this.rotationVelocity.multiplyScalar(this.damping);
 
-      this.game.camera.rotation.x = Math.max(-1.396, Math.min(1.396, this.game.camera.rotation.x));
+      // Clamp vertical pitch: -1.4 (look up) to 0.3 (look down slightly)
+      // This prevents looking at feet while allowing ground targeting at distance
+      this.game.camera.rotation.x = Math.max(-1.4, Math.min(0.3, this.game.camera.rotation.x));
       this.game.camera.rotation.order = 'YXZ';
 
       // 2. Smooth Zoom
@@ -1196,7 +1198,8 @@ class HuntingGame3D {
           if (this.bowSystem.keys['KeyA'] || this.bowSystem.keys['ArrowLeft']) this.camera.rotation.y += aimSpeed;
           if (this.bowSystem.keys['KeyD'] || this.bowSystem.keys['ArrowRight']) this.camera.rotation.y -= aimSpeed;
 
-          this.camera.rotation.x = Math.max(-1.45, Math.min(1.45, this.camera.rotation.x));
+          // Clamp downward pitch to 0.3 to keep target at a distance from ground
+          this.camera.rotation.x = Math.max(-1.45, Math.min(0.3, this.camera.rotation.x));
           this.camera.rotation.order = 'YXZ';
       } else if (this.activeTrackingArrow) {
           const arrow = this.activeTrackingArrow;
@@ -1365,6 +1368,9 @@ const BirdShooting = () => {
   const [drawPower, setDrawPower] = useState(0);
   const [sessionTime, setSessionTime] = useState(0);
   const [sessionCharged, setSessionCharged] = useState(0); 
+  const [nextChargeTime, setNextChargeTime] = useState(null);
+  const [currentIntervalMinutes, setCurrentIntervalMinutes] = useState(5);
+  const [timeLeftStr, setTimeLeftStr] = useState("00:00");
   const [remainingAmmo, setRemainingAmmo] = useState(0);
   const [isNocked, setIsNocked] = useState(false);
   const [isScoped, setIsScoped] = useState(false);
@@ -1411,6 +1417,8 @@ const BirdShooting = () => {
         setMatchData(data);
         setRemainingAmmo(data.ammo);
         setSessionCharged(data.sessionCharged || 0.1); 
+        setNextChargeTime(data.nextChargeTime);
+        setCurrentIntervalMinutes(data.intervalMinutes || 5);
         setGameState('playing');
         setSessionTime(0);
         setLoading(false);
@@ -1426,6 +1434,9 @@ const BirdShooting = () => {
     };
 
     const handleGameOver = (data) => {
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(e => {});
+        }
         setFinalResult(data);
         setGameState('ended');
         dispatch(updateWallet({ mainBalance: data.newBalance }));
@@ -1435,6 +1446,12 @@ const BirdShooting = () => {
         dispatch(updateWallet({ mainBalance: data.mainBalance }));
         if (data.sessionCharged !== undefined) {
             setSessionCharged(data.sessionCharged);
+        }
+        if (data.nextChargeTime) {
+            setNextChargeTime(data.nextChargeTime);
+        }
+        if (data.intervalMinutes) {
+            setCurrentIntervalMinutes(data.intervalMinutes);
         }
     };
 
@@ -1514,6 +1531,24 @@ const BirdShooting = () => {
 
   useEffect(() => {
       let interval;
+      if (gameState === 'playing' && nextChargeTime) {
+          interval = setInterval(() => {
+              const now = Date.now();
+              const diff = nextChargeTime - now;
+              if (diff <= 0) {
+                  setTimeLeftStr("00:00");
+              } else {
+                  const mins = Math.floor(diff / 60000);
+                  const secs = Math.floor((diff % 60000) / 1000);
+                  setTimeLeftStr(`${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`);
+              }
+          }, 1000);
+      }
+      return () => clearInterval(interval);
+  }, [gameState, nextChargeTime]);
+
+  useEffect(() => {
+      let interval;
       if (gameState === 'playing') {
           interval = setInterval(() => {
               setSessionTime(prev => prev + 1);
@@ -1523,6 +1558,9 @@ const BirdShooting = () => {
   }, [gameState]);
 
   const handleEndGame = () => {
+      if (document.fullscreenElement) {
+          document.exitFullscreen().catch(err => console.warn("Error exiting fullscreen", err));
+      }
       if (socket && matchData) {
           socket.emit('bird_shoot:end', { gameId: matchData.id });
       } else {
@@ -1537,17 +1575,36 @@ const BirdShooting = () => {
   const startNewMatch = () => {
       if (!socket) return;
       
-      // Request Fullscreen for mobile immersion
-      if (gameContainerRef.current?.requestFullscreen) {
-          gameContainerRef.current.requestFullscreen().catch(err => {
+      // Force Fullscreen for gameplay immersion
+      // Use document.body to ensure the fixed overlay (HUD) is included
+      const elem = document.body;
+      if (elem.requestFullscreen) {
+          elem.requestFullscreen().catch(err => {
               console.warn("Fullscreen request failed", err);
           });
+      } else if (elem.webkitRequestFullscreen) {
+          elem.webkitRequestFullscreen();
       }
 
       setLoading(true);
       setCurrentScore(0);
       socket.emit('bird_shoot:join', { level: selectedLevel });
   };
+
+  // Maintain Fullscreen Logic
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+        if (!document.fullscreenElement && gameState === 'playing') {
+            // User tried to exit fullscreen while playing, try to re-enter if possible
+            // Note: Most browsers require a user gesture, so this might not always work 
+            // without another click, but we can try to prompt or handle it.
+            console.log("Exited fullscreen during gameplay");
+        }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, [gameState]);
 
   const handleShoot = () => {
       if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
@@ -1813,9 +1870,34 @@ const BirdShooting = () => {
                         <p className="text-[6px] md:text-[9px] text-gray-400 font-black uppercase hud-label tracking-tighter">Arrows</p>
                         <p className="text-sm md:text-4xl font-black text-white hud-value leading-none">{remainingAmmo}</p>
                     </div>
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
-                        <p className="text-[6px] md:text-[9px] text-orange-500 font-black uppercase hud-label tracking-tighter">Balance</p>
-                        <p className="text-xs md:text-2xl font-black text-white hud-value leading-none">{sessionCharged.toFixed(1)}</p>
+                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center min-w-[80px] md:min-w-[120px] relative overflow-hidden">
+                        {/* Analog Clock Background Effect */}
+                        <div className="absolute inset-0 opacity-10">
+                            <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 100 100">
+                                <circle
+                                    cx="50" cy="50" r="45"
+                                    fill="none"
+                                    stroke="#3bc117"
+                                    strokeWidth="10"
+                                    strokeDasharray="282.7"
+                                    strokeDashoffset={(() => {
+                                        if (!nextChargeTime) return 0;
+                                        const now = Date.now();
+                                        const total = currentIntervalMinutes * 60000;
+                                        const remaining = Math.max(0, nextChargeTime - now);
+                                        return 282.7 * (1 - remaining / total);
+                                    })()}
+                                />
+                            </svg>
+                        </div>
+                        
+                        <p className="text-[6px] md:text-[9px] text-orange-500 font-black uppercase hud-label tracking-tighter flex items-center gap-1 z-10">
+                            <Clock className="w-2 h-2 md:w-3 md:h-3 animate-pulse" />
+                            Session
+                        </p>
+                        <p className="text-sm md:text-4xl font-black text-white hud-value leading-none font-mono z-10">
+                            {timeLeftStr}
+                        </p>
                     </div>
                     <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
                         <p className="text-[6px] md:text-[9px] text-yellow-500 font-black uppercase hud-label tracking-tighter">Zoom</p>
@@ -1991,20 +2073,30 @@ const BirdShooting = () => {
                     exit={{opacity: 0}}
                     className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center"
                 >
-                     {/* Scope Crosshair Mask */}
-                    <div className="w-full h-full border-[15vw] md:border-[10vw] border-black/90 rounded-full absolute inset-0 mix-blend-multiply"></div>
+                     {/* Scope Crosshair Mask - Thicker Borders for focus */}
+                    <div className="w-full h-full border-[25vw] md:border-[20vw] border-black rounded-full absolute inset-0 mix-blend-multiply"></div>
                     
                     {/* Pro Scoped Reticle (2D) */}
-                    <div className="relative flex items-center justify-center pointer-events-none">
-                        {/* Outer Ring */}
-                        <div className="w-[60vh] h-[60vh] border border-[#3bc117]/20 rounded-full"></div>
-                        {/* Middle Ring */}
-                        <div className="absolute w-[30vh] h-[30vh] border border-[#3bc117]/40 rounded-full"></div>
-                        {/* Main Cross */}
-                        <div className="absolute w-[80vh] h-[1px] bg-[#3bc117]/30"></div>
-                        <div className="absolute h-[80vh] w-[1px] bg-[#3bc117]/30"></div>
+                    <div className="relative flex items-center justify-center pointer-events-none scale-[1.2] md:scale-[1.5]">
+                        {/* Outer Thick Ring */}
+                        <div className="w-[40vh] h-[40vh] border-[6px] border-[#3bc117] rounded-full shadow-[0_0_20px_rgba(59,193,23,0.5)]"></div>
+                        {/* Middle Tech Ring */}
+                        <div className="absolute w-[35vh] h-[35vh] border-[2px] border-[#3bc117]/40 rounded-full border-dashed animate-[spin_20s_linear_infinite]"></div>
+                        {/* Inner Ring */}
+                        <div className="absolute w-[15vh] h-[15vh] border-[4px] border-[#3bc117]/80 rounded-full"></div>
+                        
+                        {/* Main Thick Cross */}
+                        <div className="absolute w-[45vh] h-[2px] bg-[#3bc117] shadow-[0_0_10px_rgba(59,193,23,0.5)]"></div>
+                        <div className="absolute h-[45vh] w-[2px] bg-[#3bc117] shadow-[0_0_10px_rgba(59,193,23,0.5)]"></div>
+                        
+                        {/* Corner Accents */}
+                        <div className="absolute top-[-2vh] left-[-2vh] w-4 h-4 border-t-4 border-l-4 border-[#3bc117]"></div>
+                        <div className="absolute top-[-2vh] right-[-2vh] w-4 h-4 border-t-4 border-r-4 border-[#3bc117]"></div>
+                        <div className="absolute bottom-[-2vh] left-[-2vh] w-4 h-4 border-b-4 border-l-4 border-[#3bc117]"></div>
+                        <div className="absolute bottom-[-2vh] right-[-2vh] w-4 h-4 border-b-4 border-r-4 border-[#3bc117]"></div>
+
                         {/* Center Dot */}
-                        <div className="absolute w-1.5 h-1.5 bg-red-500 rounded-full shadow-[0_0_10px_red]"></div>
+                        <div className="absolute w-2 h-2 bg-red-500 rounded-full shadow-[0_0_15px_red]"></div>
                     </div>
 
                     {/* Exit Button Only in Scoped UI */}
