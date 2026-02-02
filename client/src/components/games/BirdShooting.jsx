@@ -175,17 +175,34 @@ class SoundSystem {
   }
 }
 
+// --- Auto-Discovery of Bird Assets ---
+const birdAssetGlob = import.meta.glob('../../assets/birds/**/*.png', { eager: true, query: '?url', import: 'default' });
+
+const birdAssetMap = {};
+Object.keys(birdAssetGlob).forEach(path => {
+    const parts = path.split('/');
+    const filename = parts.pop();
+    const type = parts.pop();
+    if (!birdAssetMap[type]) birdAssetMap[type] = [];
+    birdAssetMap[type].push(birdAssetGlob[path]);
+});
+console.log("Bird Assets Loaded:", birdAssetMap);
+
 class BirdSystem3D {
   constructor(game, serverBirds) {
     this.game = game;
     this.birds = [];
     this.activeBirdIndex = 0;
+    
     this.birdConfigs = {
-      sparrow: { speed: 1.8, size: 2.8, points: 10, asset: 'sparrow', frames: 3, dir: 'h' },
-      pigeon: { speed: 1.5, size: 3.2, points: 15, asset: 'pigeon', frames: 3, dir: 'h' },
-      crow: { speed: 2.5, size: 3.5, points: 25, asset: 'pigeon', frames: 3, dir: 'h' },
-      eagle: { speed: 3.5, size: 5.0, points: 50, asset: 'eagle', frames: 6, dir: 'v' },
-      phoenix: { speed: 5.5, size: 6.0, points: 150, asset: 'rare', frames: 3, dir: 'h' }
+      sparrow: { speed: 1.8, size: 2.8, points: 10, move: 'sine' },
+      pigeon: { speed: 1.5, size: 3.2, points: 15, move: 'sine' },
+      parrot: { speed: 2.2, size: 3.0, points: 20, move: 'erratic' },
+      crow: { speed: 2.5, size: 3.5, points: 25, move: 'sine' },
+      owl: { speed: 2.0, size: 3.8, points: 30, move: 'hover' },
+      eagle: { speed: 3.5, size: 5.0, points: 50, move: 'linear' },
+      falcon: { speed: 4.5, size: 4.5, points: 40, move: 'linear' },
+      phoenix: { speed: 5.5, size: 6.0, points: 150, move: 'sine' }
     };
     
     this.textureLoader = new THREE.TextureLoader();
@@ -195,34 +212,56 @@ class BirdSystem3D {
   initFromData(serverBirds) {
     if (!serverBirds) return;
     
-    const basename = window.location.hostname.includes('github.io') ? window.location.pathname.split('/')[1] ? `/${window.location.pathname.split('/')[1]}` : '' : '';
-
     serverBirds.forEach((data, index) => {
+      // 1. Get Config
       const config = this.birdConfigs[data.type] || this.birdConfigs.sparrow;
       
-      const texturePath = `${basename}/assets/birds/${config.asset}/fly.png`;
-      const texture = this.textureLoader.load(texturePath);
+      // 2. Resolve Asset (Auto-Discovery + Variance)
+      const assets = birdAssetMap[data.type] || birdAssetMap['sparrow'];
       
-      // Sprite Sheet Configuration (Flexible for H/V)
-      let aspect = 1; 
-      if (config.dir === 'v') {
-          texture.wrapT = THREE.RepeatWrapping;
-          texture.repeat.set(1, 1 / config.frames);
-          // If 6 frames in 64x192, each frame is 64x32 -> aspect 2:1
-          aspect = 2; 
+      let textureUrl;
+      if (assets && assets.length > 0) {
+          textureUrl = assets[Math.floor(Math.random() * assets.length)];
       } else {
-          texture.wrapS = THREE.RepeatWrapping;
-          texture.repeat.set(1 / config.frames, 1);
-          // If 3 frames in 192x64, each frame is 64x64 -> aspect 1:1
-          aspect = 1;
+          console.warn(`No assets found for ${data.type}`);
+          return;
       }
+
+      // Declare bird reference early to avoid TDZ in callback
+      let bird = null;
+
+      const texture = this.textureLoader.load(textureUrl, (tex) => {
+          const img = tex.image;
+          let frames = 1;
+          let dir = 'h';
+          
+          // Smart Sprite System: Detect Frames & Dir
+          if (img.width > img.height) {
+              dir = 'h';
+              frames = Math.round(img.width / img.height);
+              tex.wrapS = THREE.RepeatWrapping;
+              tex.repeat.set(1 / frames, 1);
+          } else {
+              dir = 'v';
+              frames = Math.round(img.height / img.width);
+              tex.wrapT = THREE.RepeatWrapping;
+              tex.repeat.set(1, 1 / frames);
+          }
+          
+          // Safe update via closure capture
+          if (bird) {
+              bird.frames = frames;
+              bird.dir = dir;
+          }
+      });
       
-      const geometry = new THREE.PlaneGeometry(config.size, config.size / aspect);
+      const geometry = new THREE.PlaneGeometry(config.size, config.size); 
       const material = new THREE.MeshBasicMaterial({ 
         map: texture, 
         transparent: true, 
         side: THREE.DoubleSide,
-        alphaTest: 0.5 
+        alphaTest: 0.5,
+        color: 0xffffff 
       });
       const mesh = new THREE.Mesh(geometry, material);
       
@@ -245,7 +284,8 @@ class BirdSystem3D {
       
       this.game.world.addBody(body);
 
-      const bird = {
+      // Assign to the declared variable
+      bird = {
         mesh: mesh,
         body: body,
         type: config,
@@ -255,7 +295,9 @@ class BirdSystem3D {
         serverId: data.id,
         isDying: false,
         spawned: index === 0,
-        animTime: Math.random() * 10
+        animTime: Math.random() * 10,
+        frames: 1, 
+        dir: 'h'
       };
       
       this.birds.push(bird);
@@ -284,8 +326,29 @@ class BirdSystem3D {
     }
 
     if (bird.active) {
+      // Movement Patterns
       bird.body.position.x += bird.velocity.x * deltaTime;
-      bird.body.position.y = bird.baseY + Math.sin(time * 2 + bird.serverId) * 3;
+
+      switch (bird.type.move) {
+          case 'linear':
+              // Flat flight (Eagles/Falcons)
+              bird.body.position.y = bird.baseY; 
+              break;
+          case 'hover':
+              // Slower, deep swoop (Owl)
+              bird.body.position.y = bird.baseY + Math.sin(time * 1 + bird.serverId) * 6;
+              break;
+          case 'erratic':
+              // Jittery flight (Parrot)
+              bird.body.position.y = bird.baseY + Math.sin(time * 5 + bird.serverId) * 2 + Math.cos(time * 3) * 1;
+              break;
+          case 'sine':
+          default:
+              // Standard bobbing
+              bird.body.position.y = bird.baseY + Math.sin(time * 2 + bird.serverId) * 3;
+              break;
+      }
+
       bird.mesh.position.copy(bird.body.position);
       
       if (bird.mesh.position.x > 80) {
@@ -295,18 +358,20 @@ class BirdSystem3D {
         this.spawnNext();
       }
 
-      // Sprite Sheet Animation (Handle H and V)
+      // Sprite Sheet Animation (Handle Dynamic H and V)
       bird.animTime += deltaTime;
       const animationSpeed = 10; 
-      const frame = Math.floor(bird.animTime * animationSpeed) % bird.type.frames;
       
-      if (bird.type.dir === 'v') {
-          // Vertical offset (Top to bottom typically, or bottom to top)
-          // Three.js texture offset Y is 0 at bottom, 1 at top. 
-          // If frames are top-to-bottom in image, frame 0 is at offset Y = (frames-1)/frames
-          bird.mesh.material.map.offset.y = 1 - ((frame + 1) / bird.type.frames);
+      // Use dynamic detected frames
+      const frameCount = bird.frames || 1;
+      const frame = Math.floor(bird.animTime * animationSpeed) % frameCount;
+      
+      if (bird.dir === 'v') {
+          // Vertical offset
+          bird.mesh.material.map.offset.y = 1 - ((frame + 1) / frameCount);
       } else {
-          bird.mesh.material.map.offset.x = frame / bird.type.frames;
+          // Horizontal offset
+          bird.mesh.material.map.offset.x = frame / frameCount;
       }
       
       bird.mesh.lookAt(bird.mesh.position.clone().add(bird.velocity));
@@ -852,8 +917,9 @@ class BowSystem3D {
       
       this.rotationVelocity.multiplyScalar(this.damping);
 
-      // Relaxed downward pitch to 1.0 to allow more movement while still preventing extreme downward look
-      this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.0, this.game.camera.rotation.x));
+      // Clamp vertical pitch to +/- 80 degrees (approx 1.4 radians)
+      // This allows full sky targeting while preventing looking straight down at the ground
+      this.game.camera.rotation.x = Math.max(-1.4, Math.min(1.4, this.game.camera.rotation.x));
       this.game.camera.rotation.order = 'YXZ';
 
       // 2. Smooth Zoom
@@ -1064,7 +1130,7 @@ class HuntingGame3D {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     
-    this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+    this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 500000);
     this.camera.position.set(0, 1.7, 0); // Correct Hunter Eye Level
     this.camera.rotation.order = 'YXZ';
     

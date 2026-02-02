@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 const isProduction = window.location.hostname !== 'localhost';
+// For Production: Set VITE_API_URL in your deployment environment (e.g., Render, Vercel, etc.)
 export const API_URL = import.meta.env.VITE_API_URL || 
                 (isProduction ? 'https://gamex-th2n.onrender.com/api' : 'http://localhost:3001/api');
 

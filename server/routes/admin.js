@@ -15,8 +15,21 @@ router.get('/stats', auth, admin, async (req, res) => {
         const users = await User.find();
         const totalBalance = users.reduce((acc, user) => acc + (user.wallet.mainBalance || 0), 0);
         const totalBonus = users.reduce((acc, user) => acc + (user.wallet.bonusBalance || 0), 0);
+        
+        const gameConfig = await Game.findOne();
+        const trxPool = gameConfig?.trxPool || 0;
+        
         const totalTransactions = await Transaction.countDocuments();
-        res.json({ totalUsers, totalBalance, totalBonus, totalTransactions });
+        const pendingTransactions = await Transaction.countDocuments({ status: 'pending' });
+        
+        res.json({ 
+            totalUsers, 
+            totalBalance, 
+            totalBonus, 
+            totalTransactions, 
+            pendingTransactions,
+            trxPool 
+        });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
@@ -158,6 +171,80 @@ router.post('/bird-config', auth, admin, async (req, res) => {
         else config.birdShooting = { ...config.birdShooting, ...req.body };
         await config.save();
         res.json(config.birdShooting);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// --- Payment Config ---
+router.get('/payment-config', auth, admin, async (req, res) => {
+    try {
+        const config = await Game.findOne();
+        res.json(config ? config.payment : {});
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.post('/payment-config', auth, admin, async (req, res) => {
+    try {
+        let config = await Game.findOne();
+        if (!config) config = new Game({ payment: req.body });
+        else config.payment = { ...config.payment, ...req.body };
+        await config.save();
+        res.json(config.payment);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// --- Transaction Management ---
+router.get('/transactions/pending', auth, admin, async (req, res) => {
+    try {
+        const txs = await Transaction.find({ status: 'pending' })
+            .populate('userId', 'username email')
+            .sort({ createdAt: -1 });
+        res.json(txs);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.post('/transactions/process', auth, admin, async (req, res) => {
+    const { txId, action, reason } = req.body; // action: 'approve' or 'reject'
+    try {
+        const tx = await Transaction.findById(txId);
+        if (!tx || tx.status !== 'pending') {
+            return res.status(404).json({ message: 'Transaction not found or already processed' });
+        }
+
+        const user = await User.findById(tx.userId);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        if (action === 'approve') {
+            tx.status = 'completed';
+            tx.completedAt = new Date();
+            
+            // If it's a deposit, add the funds now
+            if (tx.type === 'deposit') {
+                user.wallet.mainBalance += tx.amount;
+                await user.save();
+            }
+            // For withdrawal, funds were already deducted upon request. 
+            // So we just mark it as completed.
+        } else {
+            tx.status = 'failed';
+            tx.description = (tx.description || '') + ` (Rejected: ${reason || 'No reason provided'})`;
+            
+            // If it was a withdrawal, refund the user
+            if (tx.type === 'withdrawal') {
+                user.wallet.mainBalance += tx.amount;
+                await user.save();
+            }
+        }
+
+        await tx.save();
+        res.json({ success: true, transaction: tx });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }

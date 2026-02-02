@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   User, 
@@ -16,7 +17,8 @@ import {
   Copy,
   CheckCircle2,
   Share2,
-  ShoppingBag
+  ShoppingBag,
+  Target
 } from 'lucide-react';
 
 const Profile = () => {

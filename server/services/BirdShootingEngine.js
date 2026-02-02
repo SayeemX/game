@@ -6,8 +6,11 @@ class BirdShootingEngine {
     this.birdTypes = {
       sparrow: { speed: 1.8, size: 40, points: 10, rarity: 1, health: 1 },
       pigeon: { speed: 1.5, size: 50, points: 15, rarity: 2, health: 1 },
+      parrot: { speed: 2.2, size: 45, points: 20, rarity: 2, health: 1 }, // New
       crow: { speed: 2.5, size: 60, points: 25, rarity: 3, health: 1 },
+      owl: { speed: 2.0, size: 55, points: 30, rarity: 3, health: 1 }, // New
       eagle: { speed: 3.5, size: 80, points: 50, rarity: 4, health: 1 },
+      falcon: { speed: 4.5, size: 70, points: 40, rarity: 4, health: 1 }, // New
       phoenix: { speed: 5.5, size: 100, points: 150, rarity: 5, health: 1 }
     };
 
@@ -71,10 +74,15 @@ class BirdShootingEngine {
       // Determine type based on rarity roll (0-100)
       const roll = val % 100;
       let type = 'sparrow';
-      if (roll < 5) type = 'phoenix';
-      else if (roll < 15) type = 'eagle';
-      else if (roll < 35) type = 'crow';
-      else if (roll < 65) type = 'pigeon';
+      
+      if (roll < 4) type = 'phoenix';        // 4%
+      else if (roll < 10) type = 'falcon';   // 6%
+      else if (roll < 18) type = 'eagle';    // 8%
+      else if (roll < 28) type = 'owl';      // 10%
+      else if (roll < 40) type = 'crow';     // 12%
+      else if (roll < 55) type = 'parrot';   // 15%
+      else if (roll < 75) type = 'pigeon';   // 20%
+      // else sparrow (25%)
 
       const config = this.birdTypes[type];
       
@@ -111,24 +119,23 @@ class BirdShootingEngine {
     if (birdId !== undefined && birdId !== null) {
         const bird = game.birds.find(b => b.id === birdId);
         if (bird && bird.alive) {
-            // Calculate Current X Position (Looping -60 to 60 on client, mapped to 0-100 on server)
-            // Client: initialX = data.x - 50. velocity = config.speed * 2.
-            const initialXClient = bird.x - 50;
+            // Client Logic: startX = -70. velocity = config.speed * 4.
+            // distance = speed * 4 * elapsed. currentX = startX + distance.
+            const startX = -70;
             const distanceTravelled = bird.speed * 4 * elapsed;
-            const currentXClient = ((initialXClient + 60 + distanceTravelled) % 120) - 60;
-            const currentXServer = currentXClient + 50;
+            const currentX = startX + distanceTravelled;
 
-            const dx = currentXServer - x;
-            const dy = bird.y - y; // Y is relatively static
+            const dx = currentX - x;
+            const dy = bird.y - y; // Y is relatively static (baseY + sin offset)
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // Allow some margin for network latency/physics diffs
-            const validationRadius = (this.birdTypes[bird.type].size / 5) + 5; 
+            // Allow 15 units margin for network latency/physics diffs
+            const validationRadius = 15; 
             
             if (distance <= validationRadius) {
                 hitBird = bird;
             } else {
-                console.warn(`Shot Rejected: ID Match but Distance too far (${distance.toFixed(2)} > ${validationRadius.toFixed(2)})`);
+                console.warn(`Shot Rejected: ID Match but Distance too far (${distance.toFixed(2)} > ${validationRadius})`);
             }
         }
     } 
@@ -138,18 +145,15 @@ class BirdShootingEngine {
         for (const bird of game.birds) {
             if (!bird.alive) continue;
             
-            const initialXClient = bird.x - 50;
+            const startX = -70;
             const distanceTravelled = bird.speed * 4 * elapsed;
-            const currentXClient = ((initialXClient + 60 + distanceTravelled) % 120) - 60;
-            const currentXServer = currentXClient + 50;
+            const currentX = startX + distanceTravelled;
 
-            const dx = currentXServer - x;
+            const dx = currentX - x;
             const dy = bird.y - y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            const hitRadius = (this.birdTypes[bird.type].size / 10);
-            
-            if (distance <= hitRadius) {
+            if (distance <= 10) { // Tighter radius for fallback
                 hitBird = bird;
                 break;
             }

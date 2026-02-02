@@ -129,7 +129,7 @@ const ProvablyFairSettings = () => {
                                         <RefreshCw className="w-4 h-4 text-white" />
                                     </button>
                                 </div>
-                                <p className="text-[9px] text-gray-600 font-bold uppercase">The actual seed is secret until you rotate. The hash proves it doesn't change during play.</p>
+                                <p className="text-[9px] text-gray-600 font-bold uppercase">The actual seed is secret until you rotate. The hash proves it doesn&apos;t change during play.</p>
                             </div>
 
                             <div className="space-y-4">

@@ -153,57 +153,73 @@ router.post('/play', auth, async (req, res) => {
     }
 
     const cost = wheelConfig.cost;
-    // Jackpot Contributions (1% of bet)
+    // Jackpot Contributions (1% of bet) - Atomic Update
     const contribution = cost * 0.01;
+    const jackpotInc = {};
     ['MINI', 'MINOR', 'MAJOR', 'GRAND', 'MEGA'].forEach(l => {
-        gameConfig.spinGame.jackpots[l].current += contribution / 5;
+        jackpotInc[`spinGame.jackpots.${l}.current`] = contribution / 5;
     });
+    
+    gameConfig = await Game.findOneAndUpdate({}, { $inc: jackpotInc }, { new: true });
 
-    // Handle Jackpot Win
+    // Handle Jackpot Win Logic (Reset specific jackpot if won)
     if (winningPrize.type === 'jackpot') {
         const jType = winningPrize.jackpotType || 'MINI';
         winningPrize.value = gameConfig.spinGame.jackpots[jType].current;
         winningPrize.name = `${jType} JACKPOT ${winningPrize.value.toFixed(2)} TRX`;
-        gameConfig.spinGame.jackpots[jType].current = gameConfig.spinGame.jackpots[jType].base;
+        
+        const jackpotReset = {};
+        jackpotReset[`spinGame.jackpots.${jType}.current`] = gameConfig.spinGame.jackpots[jType].base;
+        await Game.findOneAndUpdate({}, { $set: jackpotReset });
     }
-    await gameConfig.save();
 
-    // Deduct credit
-    user.wallet.spinCredits[tier] -= 1;
-    user.markModified('wallet.spinCredits');
-    
-    user.provablyFair.nonce += 1;
-
-    // Reward Logic
-    if (winningPrize.value > 0 || winningPrize.type === 'weapon' || winningPrize.type === 'item' || winningPrize.type === 'spins') {
-        switch(winningPrize.type) {
-            case 'jackpot':
-            case 'balance':
-                user.wallet.mainBalance += winningPrize.value;
-                break;
-            case 'spins':
-                // Prize spins are currently awarded to the playing tier
-                user.wallet.spinCredits[tier] += winningPrize.value;
-                user.markModified('wallet.spinCredits');
-                break;
-            case 'weapon':
-                const weapon = await BirdWeapon.findOne({ key: winningPrize.itemKey });
-                if (weapon && !user.inventory.weapons.some(w => w.weaponId.toString() === weapon._id.toString())) {
-                    user.inventory.weapons.push({ weaponId: weapon._id });
-                }
-                break;
-            case 'item':
-                const idx = user.inventory.items.findIndex(i => i.itemKey === winningPrize.itemKey);
-                if (idx > -1) user.inventory.items[idx].amount += winningPrize.value;
-                else user.inventory.items.push({ itemKey: winningPrize.itemKey, amount: winningPrize.value });
-                break;
+    // Atomic User Update (Deduct credit, increment nonce, add rewards)
+    const userUpdate = {
+        $inc: { 
+            [`wallet.spinCredits.${tier}`]: -1,
+            "provablyFair.nonce": 1
         }
+    };
+
+    if (winningPrize.value > 0 || winningPrize.type === 'balance' || winningPrize.type === 'jackpot') {
         if (winningPrize.type === 'balance' || winningPrize.type === 'jackpot') {
-            user.wallet.totalWon += winningPrize.value;
+            userUpdate.$inc["wallet.mainBalance"] = winningPrize.value;
+            userUpdate.$inc["wallet.totalWon"] = winningPrize.value;
         }
     }
 
-    await user.save();
+    if (winningPrize.type === 'spins') {
+        userUpdate.$inc[`wallet.spinCredits.${tier}`] += winningPrize.value;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(user._id, userUpdate, { new: true });
+
+    // Handle non-numeric inventory updates (Weapons/Items)
+    if (winningPrize.type === 'weapon') {
+        const weapon = await BirdWeapon.findOne({ key: winningPrize.itemKey });
+        if (weapon) {
+            await User.updateOne(
+                { _id: user._id, "inventory.weapons.weaponId": { $ne: weapon._id } },
+                { $push: { "inventory.weapons": { weaponId: weapon._id } } }
+            );
+        }
+    } else if (winningPrize.type === 'item') {
+        const itemExists = updatedUser.inventory.items.some(i => i.itemKey === winningPrize.itemKey);
+        if (itemExists) {
+            await User.updateOne(
+                { _id: user._id, "inventory.items.itemKey": winningPrize.itemKey },
+                { $inc: { "inventory.items.$.amount": winningPrize.value } }
+            );
+        } else {
+            await User.updateOne(
+                { _id: user._id },
+                { $push: { "inventory.items": { itemKey: winningPrize.itemKey, amount: winningPrize.value } } }
+            );
+        }
+    }
+
+    // Final fetch for consistent state in response
+    const finalUser = await User.findById(user._id);
 
     await Transaction.create({
       userId: user._id,
@@ -216,9 +232,9 @@ router.post('/play', auth, async (req, res) => {
     res.json({
       success: true,
       prize: winningPrize,
-      result: { hash: rawHash, nonce, clientSeed: currentClientSeed },
-      wallet: user.wallet,
-      inventory: user.inventory,
+      result: { hash: rawHash, nonce, clientSeed: user.provablyFair.clientSeed },
+      wallet: finalUser.wallet,
+      inventory: finalUser.inventory,
       jackpots: gameConfig.spinGame.jackpots
     });
 

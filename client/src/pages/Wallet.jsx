@@ -17,7 +17,9 @@ import {
   ShieldCheck,
   CreditCard,
   QrCode,
-  ShoppingBag
+  ShoppingBag,
+  Zap,
+  Target
 } from 'lucide-react';
 import { paymentAPI } from '../services/api';
 import { updateWallet } from '../redux/slices/userSlice';
@@ -31,6 +33,7 @@ const Wallet = () => {
   const [loading, setLoading] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
+  const [paymentConfig, setPaymentConfig] = useState(null);
 
   // Form States
   const [depositData, setDepositData] = useState({ amount: '', method: 'bkash', transactionId: '', senderNumber: '' });
@@ -40,8 +43,18 @@ const Wallet = () => {
   useEffect(() => {
     if (isAuthenticated) {
         fetchHistory();
+        fetchPaymentConfig();
     }
   }, [isAuthenticated]);
+
+  const fetchPaymentConfig = async () => {
+      try {
+          const res = await paymentAPI.methods();
+          setPaymentConfig(res.data.payment);
+      } catch (err) {
+          console.error("Failed to fetch payment config");
+      }
+  };
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -250,7 +263,7 @@ const Wallet = () => {
                                                         {depositData.method === 'bkash' && <div className="w-3 h-3 bg-yellow-500 rounded-full" />}
                                                     </div>
                                                 </div>
-                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Send money to: 017XXXXXXXX</p>
+                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Send money to: {paymentConfig?.bkash?.number || '...'}</p>
                                             </div>
                                             <div className={`p-6 rounded-3xl border-2 transition-all cursor-pointer ${depositData.method === 'trx' ? 'border-yellow-500 bg-yellow-500/5' : 'border-gray-800 bg-black/20'}`} onClick={() => setDepositData({...depositData, method: 'trx'})}>
                                                 <div className="flex items-center justify-between mb-4">
@@ -259,7 +272,7 @@ const Wallet = () => {
                                                         {depositData.method === 'trx' && <div className="w-3 h-3 bg-yellow-500 rounded-full" />}
                                                     </div>
                                                 </div>
-                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest truncate">TRC20 Address: TY123...456</p>
+                                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest truncate">TRC20 Address: {paymentConfig?.trx?.address || '...'}</p>
                                             </div>
                                         </div>
 
@@ -270,7 +283,7 @@ const Wallet = () => {
                                                     <input type="number" required min="0.01" step="0.01" placeholder="50.00" className="w-full p-4 bg-black border border-gray-800 rounded-2xl outline-none focus:border-yellow-500 font-bold" value={depositData.amount} onChange={e => setDepositData({...depositData, amount: e.target.value})} />
                                                     {depositData.amount && (depositData.method === 'bkash' || depositData.method === 'nagad') && (
                                                         <p className="text-[10px] font-black text-yellow-500 mt-2 uppercase tracking-widest">
-                                                            Please send: {(parseFloat(depositData.amount) * 15).toFixed(2)} BDT
+                                                            Please send: {(parseFloat(depositData.amount) * (paymentConfig?.conversionRate || 15)).toFixed(2)} BDT
                                                         </p>
                                                     )}
                                                 </div>

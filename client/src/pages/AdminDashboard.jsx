@@ -26,6 +26,8 @@ const AdminDashboard = () => {
   const [shopItems, setShopItems] = useState([]);
   const [spinConfig, setSpinConfig] = useState(null);
   const [birdConfig, setBirdConfig] = useState(null);
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [pendingTxs, setPendingTxs] = useState([]);
   const [selectedTier, setSelectedTier] = useState('BRONZE');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -34,6 +36,12 @@ const AdminDashboard = () => {
   const [balanceForm, setBalanceForm] = useState({ userId: '', amount: '', type: 'main', description: '' });
   const [codeForm, setCodeForm] = useState({ code: '', rewardType: 'SPIN_CREDIT', rewardValue: '', maxRedemptions: 1, expiresAt: '' });
   const [shopForm, setShopForm] = useState({ name: '', key: '', type: 'bow', damage: 1, fireRate: 500, accuracy: 1.0, price: 0 });
+  const [paymentForm, setPaymentConfigForm] = useState({ 
+      bkash: { number: '', active: true },
+      nagad: { number: '', active: true },
+      trx: { address: '', active: true },
+      conversionRate: 15
+  });
   const [editingItem, setEditingItem] = useState(null);
   const [formLoading, setFormLoading] = useState(false);
   const [formStatus, setFormStatus] = useState({ type: '', message: '' });
@@ -63,12 +71,47 @@ const AdminDashboard = () => {
       } else if (activeTab === 'bird') {
         const res = await adminAPI.getBirdConfig();
         setBirdConfig(res.data);
+      } else if (activeTab === 'finance') {
+        const configRes = await adminAPI.getPaymentConfig();
+        const txRes = await adminAPI.getPendingTransactions();
+        setPaymentConfig(configRes.data);
+        setPaymentConfigForm(configRes.data);
+        setPendingTxs(txRes.data);
       }
     } catch (err) {
       setError('Failed to fetch admin data');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleProcessTx = async (txId, action) => {
+      const reason = action === 'reject' ? window.prompt('Reason for rejection:') : null;
+      if (action === 'reject' && reason === null) return;
+
+      setFormLoading(true);
+      try {
+          await adminAPI.processTransaction({ txId, action, reason });
+          setFormStatus({ type: 'success', message: `Transaction ${action}ed!` });
+          fetchData();
+      } catch (err) {
+          setFormStatus({ type: 'error', message: 'Failed to process' });
+      } finally {
+          setFormLoading(false);
+      }
+  };
+
+  const handleSavePaymentConfig = async () => {
+      setFormLoading(true);
+      try {
+          await adminAPI.updatePaymentConfig(paymentForm);
+          setFormStatus({ type: 'success', message: 'Payment config saved!' });
+          fetchData();
+      } catch (err) {
+          setFormStatus({ type: 'error', message: 'Update failed' });
+      } finally {
+          setFormLoading(false);
+      }
   };
 
   const handleUpdateSpinPrize = (index, field, value) => {
@@ -219,7 +262,7 @@ const AdminDashboard = () => {
             </div>
             
             <div className="flex bg-[#1a2c38] p-1.5 rounded-2xl border border-gray-800">
-                {['overview', 'users', 'codes', 'shop', 'spin', 'bird'].map(tab => (
+                {['overview', 'users', 'codes', 'shop', 'spin', 'bird', 'finance'].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -237,12 +280,128 @@ const AdminDashboard = () => {
             </div>
         ) : (
             <div className="space-y-8">
+                {activeTab === 'finance' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Pending Transactions */}
+                        <div className="lg:col-span-2 bg-[#1a2c38] border border-gray-800 rounded-[2.5rem] overflow-hidden">
+                            <div className="p-6 border-b border-gray-800 bg-black/20 flex items-center justify-between">
+                                <h2 className="font-black uppercase tracking-tighter">Pending Requests</h2>
+                                <span className="px-3 py-1 bg-yellow-500/10 text-yellow-500 rounded-full text-[10px] font-black">{pendingTxs.length} Waiting</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="text-[10px] font-black text-gray-500 uppercase tracking-widest border-b border-gray-800">
+                                            <th className="px-6 py-4">User</th>
+                                            <th className="px-6 py-4">Type/Method</th>
+                                            <th className="px-6 py-4">Amount</th>
+                                            <th className="px-6 py-4">Details</th>
+                                            <th className="px-6 py-4">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-800/50">
+                                        {pendingTxs.length === 0 ? (
+                                            <tr><td colSpan="5" className="p-10 text-center text-gray-500 font-black uppercase text-xs">No pending requests</td></tr>
+                                        ) : pendingTxs.map(tx => (
+                                            <tr key={tx._id} className="hover:bg-white/5 transition-colors">
+                                                <td className="px-6 py-4">
+                                                    <div className="text-sm font-black uppercase">{tx.userId?.username}</div>
+                                                    <div className="text-[8px] text-gray-500 font-bold">{tx.userId?.email}</div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className={`text-[10px] font-black uppercase ${tx.type === 'deposit' ? 'text-green-500' : 'text-red-500'}`}>{tx.type}</div>
+                                                    <div className="text-[8px] font-bold text-gray-400 uppercase">{tx.paymentMethod}</div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="text-sm font-black">{tx.amount} TRX</div>
+                                                    <div className="text-[8px] text-yellow-500 font-bold">~ {tx.metadata?.bdtAmount || (tx.amount * (paymentConfig?.conversionRate || 15)).toFixed(2)} BDT</div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="text-[10px] font-bold truncate max-w-[150px]">
+                                                        {tx.type === 'deposit' ? `TXID: ${tx.transactionId}` : `ACC: ${tx.metadata?.accountDetails}`}
+                                                    </div>
+                                                    <div className="text-[8px] text-gray-500">{new Date(tx.createdAt).toLocaleString()}</div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex gap-2">
+                                                        <button 
+                                                            onClick={() => handleProcessTx(tx._id, 'approve')}
+                                                            className="px-3 py-1 bg-green-500/10 text-green-500 border border-green-500/20 rounded-lg text-[8px] font-black uppercase hover:bg-green-500 hover:text-black transition-all"
+                                                        >
+                                                            Approve
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleProcessTx(tx._id, 'reject')}
+                                                            className="px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-[8px] font-black uppercase hover:bg-red-500 hover:text-black transition-all"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Payment Config */}
+                        <div className="bg-[#1a2c38] border border-gray-800 rounded-[2.5rem] p-8 h-fit">
+                            <h2 className="text-xl font-black uppercase tracking-tighter mb-6">Payment Gateway</h2>
+                            <div className="space-y-6">
+                                <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-black uppercase text-gray-500">bKash Number</span>
+                                        <input type="checkbox" checked={paymentForm.bkash.active} onChange={e => setPaymentConfigForm({...paymentForm, bkash: {...paymentForm.bkash, active: e.target.checked}})} />
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-3 bg-black border border-gray-800 rounded-xl text-sm font-bold"
+                                        value={paymentForm.bkash.number}
+                                        onChange={e => setPaymentConfigForm({...paymentForm, bkash: {...paymentForm.bkash, number: e.target.value}})}
+                                    />
+                                </div>
+
+                                <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] font-black uppercase text-gray-500">TRX (TRC20) Address</span>
+                                        <input type="checkbox" checked={paymentForm.trx.active} onChange={e => setPaymentConfigForm({...paymentForm, trx: {...paymentForm.trx, active: e.target.checked}})} />
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-3 bg-black border border-gray-800 rounded-xl text-[10px] font-bold"
+                                        value={paymentForm.trx.address}
+                                        onChange={e => setPaymentConfigForm({...paymentForm, trx: {...paymentForm.trx, address: e.target.value}})}
+                                    />
+                                </div>
+
+                                <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-gray-500">Conversion Rate (1 TRX = ? BDT)</label>
+                                    <input 
+                                        type="number" 
+                                        className="w-full p-3 bg-black border border-gray-800 rounded-xl text-sm font-bold"
+                                        value={paymentForm.conversionRate}
+                                        onChange={e => setPaymentConfigForm({...paymentForm, conversionRate: parseFloat(e.target.value)})}
+                                    />
+                                </div>
+
+                                <button 
+                                    onClick={handleSavePaymentConfig}
+                                    disabled={formLoading}
+                                    className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl uppercase tracking-widest transition-all"
+                                >
+                                    {formLoading ? <Loader2 className="animate-spin mx-auto w-5 h-5" /> : 'Save Gateway Settings'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {activeTab === 'overview' && stats && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <StatCard label="Total Users" value={stats.totalUsers || 0} icon={Users} color="text-blue-500" />
-                        <StatCard label="Total Economy" value={`${(stats.totalBalance || 0).toFixed(2)} TRX`} icon={DollarSign} color="text-green-500" />
-                        <StatCard label="Bonus Pool" value={`${(stats.totalBonus || 0).toFixed(2)} TRX`} icon={Gift} color="text-purple-500" />
-                        <StatCard label="Transactions" value={stats.totalTransactions || 0} icon={TrendingUp} color="text-yellow-500" />
+                        <StatCard label="Total Economy" value={`${(stats.totalBalance || 0).toFixed(2)} TRX`} icon={DollarSign} color="text-yellow-500" />
+                        <StatCard label="Platform Profit" value={`${(stats.trxPool || 0).toFixed(2)} TRX`} icon={TrendingUp} color="text-[#3bc117]" />
+                        <StatCard label="Pending Requests" value={stats.pendingTransactions || 0} icon={AlertCircle} color="text-orange-500" />
                     </div>
                 )}
 

@@ -86,7 +86,13 @@ mongoose.connect(MONGO_URI)
       console.log('🌱 Seeding initial game config...');
       await Game.create({
         trxPool: 0,
-        birdShooting: { entryFee: 10 }
+        birdShooting: { entryFee: 10 },
+        payment: {
+          bkash: { number: "017XXXXXXXX", active: true },
+          nagad: { number: "018XXXXXXXX", active: true },
+          trx: { address: "TY123...456", active: true },
+          conversionRate: 15
+        }
       });
     }
   } catch (e) { console.error('Seeding failed:', e); }
@@ -144,24 +150,29 @@ const chargeUserSession = async (userId, io, isAuto = false) => {
             return false;
         }
 
-        const user = await User.findById(userId);
-        if (!user) return false;
+        const amountToDeduct = SESSION_CHARGE_AMOUNT;
+        
+        const updatedUser = await User.findOneAndUpdate(
+            { _id: userId, "wallet.mainBalance": { $gte: amountToDeduct } },
+            { 
+                $inc: { 
+                    "wallet.mainBalance": -amountToDeduct,
+                    "wallet.totalSpent": amountToDeduct 
+                } 
+            },
+            { new: true }
+        );
 
-        if (user.wallet.mainBalance < SESSION_CHARGE_AMOUNT) {
+        if (!updatedUser) {
             io.to(session.socketId).emit('error', { 
                 message: 'Insufficient balance for session. Please recharge or exit.',
                 type: 'SESSION_EXPIRED'
             });
-            // Do NOT auto-finalize here; let the client or explicit recharge request handle it.
             return false;
         }
 
-        user.wallet.mainBalance -= SESSION_CHARGE_AMOUNT;
-        user.wallet.totalSpent += SESSION_CHARGE_AMOUNT;
-        await user.save();
-
         // Add to Website TRX Pool
-        await Game.findOneAndUpdate({}, { $inc: { trxPool: SESSION_CHARGE_AMOUNT } });
+        await Game.findOneAndUpdate({}, { $inc: { trxPool: amountToDeduct } });
 
         // Double check session still exists after async DB calls
         const currentSession = activeSessions.get(userId);
@@ -169,7 +180,7 @@ const chargeUserSession = async (userId, io, isAuto = false) => {
             return false;
         }
 
-        currentSession.totalCharged = (currentSession.totalCharged || 0) + SESSION_CHARGE_AMOUNT;
+        currentSession.totalCharged = (currentSession.totalCharged || 0) + amountToDeduct;
         currentSession.lastChargeTime = Date.now();
         
         // Increment interval for next time (Add 1 minute)
@@ -182,7 +193,7 @@ const chargeUserSession = async (userId, io, isAuto = false) => {
         }, nextDurationMs);
 
         io.to(currentSession.socketId).emit('balance_update', { 
-            mainBalance: user.wallet.mainBalance,
+            mainBalance: updatedUser.wallet.mainBalance,
             sessionCharged: currentSession.totalCharged,
             nextChargeTime: Date.now() + nextDurationMs,
             intervalMinutes: currentSession.intervalMinutes,
@@ -212,7 +223,10 @@ io.on('connection', (socket) => {
     
     socket.on('bird_shoot:join', async (data) => {
         try {
-            const level = data?.level || 1;
+            let level = parseInt(data?.level);
+            if (isNaN(level) || level < 1 || level > 4) {
+                level = 1; // Default to level 1 if invalid
+            }
             const userId = socket.user.id;
 
             // Clear any existing session/timer for this user
@@ -221,30 +235,31 @@ io.on('connection', (socket) => {
                 clearTimeout(existingSession.timer);
             }
 
-            const user = await User.findById(userId);
-            
             const gameConfig = await Game.findOne();
             const baseFee = gameConfig?.birdShooting?.entryFee || 10;
             const entryFee = baseFee * level;
+            const totalDeduction = entryFee + SESSION_CHARGE_AMOUNT;
 
-            // Check if user has enough for entry fee + initial session charge
-            if (user.wallet.mainBalance < (entryFee + SESSION_CHARGE_AMOUNT)) {
+            // Atomic Deduction
+            const updatedUser = await User.findOneAndUpdate(
+                { _id: userId, "wallet.mainBalance": { $gte: totalDeduction } },
+                { 
+                    $inc: { 
+                        "wallet.mainBalance": -totalDeduction,
+                        "wallet.totalSpent": totalDeduction 
+                    } 
+                },
+                { new: true }
+            );
+
+            if (!updatedUser) {
                 return socket.emit('error', { message: 'Insufficient balance for entry fee and initial session charge' });
             }
-
-            // Deduct Entry Fee
-            user.wallet.mainBalance -= entryFee;
-            user.wallet.totalSpent += entryFee;
             
-            // Deduct Initial Session Charge (0.1 TRX)
-            user.wallet.mainBalance -= SESSION_CHARGE_AMOUNT;
-            user.wallet.totalSpent += SESSION_CHARGE_AMOUNT;
-            await user.save();
-            
-            // Add to Website TRX Pool
+            // Add session charge to Website TRX Pool
             await Game.findOneAndUpdate({}, { $inc: { trxPool: SESSION_CHARGE_AMOUNT } });
 
-            const weaponKey = user.inventory.equippedWeapon || 'basic_bow';
+            const weaponKey = updatedUser.inventory.equippedWeapon || 'basic_bow';
             let weaponStats = { key: 'basic_bow', type: 'bow', damage: 1, perks: { windResistance: 0.1 } };
             
             try {
@@ -253,11 +268,13 @@ io.on('connection', (socket) => {
             } catch(e) { console.error("Weapon lookup failed, using defaults"); }
 
             const ammoType = weaponStats.type === 'bow' ? 'arrow' : 'pellet';
-            if (!user.inventory.items) user.inventory.items = [];
-            let ammoItem = user.inventory.items.find(i => i.itemKey === ammoType);
+            if (!updatedUser.inventory.items) updatedUser.inventory.items = [];
+            let ammoItem = updatedUser.inventory.items.find(i => i.itemKey === ammoType);
             
             // Check if user has ANY ammo
             if (!ammoItem || ammoItem.amount <= 0) {
+                // Revert deduction if no ammo (atomic reversal)
+                await User.findByIdAndUpdate(userId, { $inc: { "wallet.mainBalance": totalDeduction, "wallet.totalSpent": -totalDeduction } });
                 return socket.emit('error', { 
                     message: `Insufficient ${ammoType}s. Please refill in the Armory.`,
                     type: 'AMMO_REQUIRED'
@@ -265,7 +282,12 @@ io.on('connection', (socket) => {
             }
 
             const ammoToLoad = ammoItem.amount;
-            ammoItem.amount = 0; // Move all to active session
+            
+            // Atomically clear ammo and get game start data
+            await User.updateOne(
+                { _id: userId, "inventory.items.itemKey": ammoType },
+                { $set: { "inventory.items.$.amount": 0 } }
+            );
 
             const game = birdShootingEngine.createGame(socket.user.id, level, weaponStats);
             game.ammo = ammoToLoad;
@@ -291,18 +313,16 @@ io.on('connection', (socket) => {
             });
 
             await Transaction.create({
-                userId: user._id,
+                userId: updatedUser._id,
                 type: 'game_bet',
-                amount: SESSION_CHARGE_AMOUNT,
+                amount: totalDeduction,
                 currency: 'TRX',
-                description: `Initial Bird Shooting Session Charge - Match: ${game.id}`,
+                description: `Bird Shooting Entry + Session Charge - Match: ${game.id}`,
                 status: 'completed'
             });
 
-            await user.save(); // Save inventory ammo deduction
-
             await BirdMatch.create({
-                userId: user._id,
+                userId: updatedUser._id,
                 matchId: game.id,
                 level,
                 entryFee,
@@ -319,7 +339,7 @@ io.on('connection', (socket) => {
                 intervalMinutes: INITIAL_INTERVAL_MIN
             });
             socket.emit('balance_update', { 
-                mainBalance: user.wallet.mainBalance, 
+                mainBalance: updatedUser.wallet.mainBalance, 
                 sessionCharged: SESSION_CHARGE_AMOUNT,
                 nextChargeTime: Date.now() + durationMs,
                 intervalMinutes: INITIAL_INTERVAL_MIN
@@ -333,12 +353,17 @@ io.on('connection', (socket) => {
     socket.on('bird_shoot:shoot', (data) => {
         if (!data?.gameId) return;
         const game = birdShootingEngine.activeGames.get(data.gameId);
-        if (game && game.ammo > 0) {
+        
+        // Authoritative Check: Ensure user matches the game and has ammo
+        if (game && game.userId === socket.user.id && game.status === 'active' && game.ammo > 0) {
             game.ammo--;
             const result = birdShootingEngine.validateShot(data.gameId, data.shotData);
             socket.emit('bird_shoot:shot_result', { ...result, remainingAmmo: game.ammo });
         } else {
-            socket.emit('error', { message: 'Out of ammo!' });
+            socket.emit('error', { 
+                message: game?.ammo <= 0 ? 'Out of ammo!' : 'Unauthorized or invalid game state',
+                type: 'SHOOT_ERROR'
+            });
         }
     });
 
@@ -375,21 +400,26 @@ io.on('connection', (socket) => {
         if (game) {
             try {
                 const reward = Math.floor(game.score / 5); 
-                const user = await User.findById(userId);
                 
-                // Return unused ammo
-                if (game.ammo > 0 && game.ammoType) {
-                    const ammoItem = user.inventory.items.find(i => i.itemKey === game.ammoType);
-                    if (ammoItem) {
-                        ammoItem.amount += game.ammo;
-                    } else {
-                        user.inventory.items.push({ itemKey: game.ammoType, amount: game.ammo });
-                    }
+                // Return unused ammo and apply reward atomically
+                const updateQuery = { $inc: {} };
+                if (reward > 0) {
+                    updateQuery.$inc["wallet.mainBalance"] = reward;
+                    updateQuery.$inc["wallet.totalWon"] = reward;
                 }
 
+                const user = await User.findById(userId);
+                if (user && game.ammo > 0 && game.ammoType) {
+                    // Mongoose array manipulation for atomic ammo return
+                    await User.updateOne(
+                        { _id: userId, "inventory.items.itemKey": game.ammoType },
+                        { $inc: { "inventory.items.$.amount": game.ammo } }
+                    );
+                }
+
+                let updatedUser = user;
                 if (reward > 0) {
-                    user.wallet.mainBalance += reward;
-                    user.wallet.totalWon += reward;
+                    updatedUser = await User.findByIdAndUpdate(userId, updateQuery, { new: true });
                     
                     await Transaction.create({
                         userId: user._id,
@@ -401,8 +431,6 @@ io.on('connection', (socket) => {
                     });
                 }
 
-                await user.save();
-
                 await BirdMatch.findOneAndUpdate(
                     { matchId: gameId },
                     { 
@@ -410,7 +438,6 @@ io.on('connection', (socket) => {
                         reward, 
                         status: 'completed', 
                         endedAt: new Date(),
-                        // Add persistent session logs if model allows
                         metadata: {
                             inTime: session?.startTime,
                             outTime: session?.endTime,
@@ -420,7 +447,7 @@ io.on('connection', (socket) => {
                 );
                 
                 activeSessions.delete(userId);
-                return { game, reward, newBalance: user.wallet.mainBalance };
+                return { game, reward, newBalance: updatedUser?.wallet?.mainBalance || user.wallet.mainBalance };
             } catch (err) {
                 console.error('Finalization error:', err);
             }

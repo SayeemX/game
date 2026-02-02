@@ -34,31 +34,26 @@ router.get('/items', auth, async (req, res) => {
 router.post('/buy', auth, async (req, res) => {
     const { itemId, itemKey, type = 'weapon' } = req.body;
     try {
-        const user = await User.findById(req.user.id);
-        
         if (type === 'weapon') {
             const item = await BirdWeapon.findById(itemId);
             if (!item) return res.status(404).json({ error: 'Weapon not found' });
 
-            // Check if already owned
-            const isOwned = user.inventory.weapons.some(w => w.weaponId.toString() === itemId);
-            if (isOwned) return res.status(400).json({ error: 'You already own this weapon' });
+            // Atomic Check and Deduction
+            const updatedUser = await User.findOneAndUpdate(
+                { _id: req.user.id, "wallet.mainBalance": { $gte: item.price }, "inventory.weapons.weaponId": { $ne: item._id } },
+                { 
+                    $inc: { "wallet.mainBalance": -item.price, "wallet.totalSpent": item.price },
+                    $push: { "inventory.weapons": { weaponId: item._id } }
+                },
+                { new: true }
+            );
 
-            // Check balance
-            if (user.wallet.mainBalance < item.price) {
-                return res.status(400).json({ error: 'Insufficient TRX balance' });
+            if (!updatedUser) {
+                return res.status(400).json({ error: 'Insufficient balance or weapon already owned' });
             }
 
-            // Deduct balance
-            user.wallet.mainBalance -= item.price;
-            user.wallet.totalSpent += item.price;
-            
-            // Add to inventory
-            user.inventory.weapons.push({ weaponId: item._id });
-            
-            // Create transaction record
             await Transaction.create({
-                userId: user._id,
+                userId: req.user.id,
                 type: 'purchase',
                 amount: item.price,
                 currency: 'TRX',
@@ -66,76 +61,55 @@ router.post('/buy', auth, async (req, res) => {
                 status: 'completed'
             });
 
-            await user.save();
-            return res.json({ success: true, message: 'Weapon purchased!', wallet: user.wallet, inventory: user.inventory });
+            return res.json({ success: true, message: 'Weapon purchased!', wallet: updatedUser.wallet, inventory: updatedUser.inventory });
         } else if (type === 'ammo') {
             const gameConfig = await Game.findOne();
-            const ammoItem = gameConfig?.shop?.consumables?.find(i => i.itemKey === itemKey && i.active);
-            
-            if (!ammoItem) {
-                // Fallback for safety if not configured in DB yet
-                const AMMO_CONFIG = {
-                    'arrow': { name: 'Arrows (50x)', amount: 50, price: 5 },
-                    'pellet': { name: 'Pellets (100x)', amount: 100, price: 5 }
-                };
-                const config = AMMO_CONFIG[itemKey];
-                if (!config) return res.status(400).json({ error: 'Invalid ammo type' });
-                
-                if (user.wallet.mainBalance < config.price) {
-                    return res.status(400).json({ error: 'Insufficient TRX balance' });
-                }
+            const ammoItem = gameConfig?.shop?.consumables?.find(i => i.itemKey === itemKey && i.active) || {
+                itemKey,
+                amount: itemKey === 'arrow' ? 50 : 100,
+                price: 5
+            };
 
-                user.wallet.mainBalance -= config.price;
-                user.wallet.totalSpent += config.price;
+            // Atomic Balance Check and Deduction
+            const updatedUser = await User.findOneAndUpdate(
+                { _id: req.user.id, "wallet.mainBalance": { $gte: ammoItem.price } },
+                { $inc: { "wallet.mainBalance": -ammoItem.price, "wallet.totalSpent": ammoItem.price } },
+                { new: true }
+            );
 
-                const itemIndex = user.inventory.items.findIndex(i => i.itemKey === itemKey);
-                if (itemIndex > -1) {
-                    user.inventory.items[itemIndex].amount += config.amount;
-                } else {
-                    user.inventory.items.push({ itemKey, amount: config.amount });
-                }
+            if (!updatedUser) return res.status(400).json({ error: 'Insufficient TRX balance' });
 
-                await Transaction.create({
-                    userId: user._id,
-                    type: 'purchase',
-                    amount: config.price,
-                    currency: 'TRX',
-                    description: `Purchased ${config.name}`,
-                    status: 'completed'
-                });
-            } else {
-                if (user.wallet.mainBalance < ammoItem.price) {
-                    return res.status(400).json({ error: 'Insufficient TRX balance' });
-                }
+            // Atomic Ammo Addition
+            const ammoUpdate = await User.updateOne(
+                { _id: req.user.id, "inventory.items.itemKey": itemKey },
+                { $inc: { "inventory.items.$.amount": ammoItem.amount } }
+            );
 
-                user.wallet.mainBalance -= ammoItem.price;
-                user.wallet.totalSpent += ammoItem.price;
-
-                const itemIndex = user.inventory.items.findIndex(i => i.itemKey === itemKey);
-                if (itemIndex > -1) {
-                    user.inventory.items[itemIndex].amount += ammoItem.amount;
-                } else {
-                    user.inventory.items.push({ itemKey, amount: ammoItem.amount });
-                }
-
-                await Transaction.create({
-                    userId: user._id,
-                    type: 'purchase',
-                    amount: ammoItem.price,
-                    currency: 'TRX',
-                    description: `Purchased ${ammoItem.name}`,
-                    status: 'completed'
-                });
+            // If not existing, push new item
+            if (ammoUpdate.matchedCount === 0) {
+                await User.updateOne(
+                    { _id: req.user.id },
+                    { $push: { "inventory.items": { itemKey, amount: ammoItem.amount } } }
+                );
             }
 
-            await user.save();
-            return res.json({ success: true, message: 'Ammo purchased!', wallet: user.wallet, inventory: user.inventory });
+            await Transaction.create({
+                userId: req.user.id,
+                type: 'purchase',
+                amount: ammoItem.price,
+                currency: 'TRX',
+                description: `Purchased ${ammoItem.amount} ${itemKey}s`,
+                status: 'completed'
+            });
+
+            const finalUser = await User.findById(req.user.id);
+            return res.json({ success: true, message: 'Ammo purchased!', wallet: finalUser.wallet, inventory: finalUser.inventory });
         }
 
         res.status(400).json({ error: 'Invalid purchase type' });
     } catch (err) {
         console.error('Purchase Error:', err);
-        res.status(500).json({ error: 'Server error: ' + err.message });
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
@@ -189,31 +163,25 @@ router.post('/buy-spins', auth, async (req, res) => {
         const tierConfig = WHEEL_TIERS[tierKey];
         const cost = numAmount * tierConfig.cost;
         
-        const user = await User.findById(req.user.id);
-        if (!user) return res.status(404).json({ error: 'User not found' });
+        // Atomic balance check and deduction
+        const updatedUser = await User.findOneAndUpdate(
+            { _id: req.user.id, "wallet.mainBalance": { $gte: cost } },
+            { 
+                $inc: { 
+                    "wallet.mainBalance": -cost, 
+                    "wallet.totalSpent": cost,
+                    [`wallet.spinCredits.${tierKey}`]: numAmount
+                }
+            },
+            { new: true }
+        );
 
-        if (user.wallet.mainBalance < cost) {
-            return res.status(400).json({ 
-                error: `Insufficient TRX balance. Need ${cost} TRX for ${numAmount} ${tierConfig.label} spins.` 
-            });
+        if (!updatedUser) {
+            return res.status(400).json({ error: `Insufficient TRX balance for ${numAmount} ${tierConfig.label} spins.` });
         }
-
-        // Atomic update
-        user.wallet.mainBalance -= cost;
-        user.wallet.totalSpent += cost;
-        
-        // Ensure spinCredits is initialized correctly as an object
-        if (typeof user.wallet.spinCredits !== 'object' || Array.isArray(user.wallet.spinCredits)) {
-            user.wallet.spinCredits = { BRONZE: 0, SILVER: 0, GOLD: 0, DIAMOND: 0 };
-        }
-        
-        user.wallet.spinCredits[tierKey] = (user.wallet.spinCredits[tierKey] || 0) + numAmount;
-        
-        // Mark as modified for Mixed types
-        user.markModified('wallet.spinCredits');
 
         await Transaction.create({
-            userId: user._id,
+            userId: req.user.id,
             type: 'purchase',
             amount: cost,
             currency: 'TRX',
@@ -221,16 +189,14 @@ router.post('/buy-spins', auth, async (req, res) => {
             status: 'completed'
         });
 
-        await user.save();
-        
         res.json({ 
             success: true, 
             message: `Successfully purchased ${numAmount} ${tierConfig.label} spins!`, 
-            wallet: user.wallet 
+            wallet: updatedUser.wallet 
         });
     } catch (err) {
         console.error('Buy Spins Error:', err);
-        res.status(500).json({ error: 'Server error: ' + err.message });
+        res.status(500).json({ error: 'Server error' });
     }
 });
 

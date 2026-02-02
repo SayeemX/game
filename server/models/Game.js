@@ -59,6 +59,23 @@ const gameSchema = new mongoose.Schema({
       active: { type: Boolean, default: true }
     }]
   },
+
+  // Payment Configuration
+  payment: {
+    bkash: {
+      number: { type: String, default: "017XXXXXXXX" },
+      active: { type: Boolean, default: true }
+    },
+    nagad: {
+      number: { type: String, default: "018XXXXXXXX" },
+      active: { type: Boolean, default: true }
+    },
+    trx: {
+      address: { type: String, default: "TY123...456" },
+      active: { type: Boolean, default: true }
+    },
+    conversionRate: { type: Number, default: 15 } // 1 TRX = 15 BDT
+  },
   
   // General
   trxPool: { type: Number, default: 0 },

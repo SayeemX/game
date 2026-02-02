@@ -3,8 +3,26 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const Game = require('../models/Game');
 
-const TRX_TO_BDT_RATE = 15; // 1 TRX = 15 BDT
+// @route   GET api/payment/methods
+// @desc    Get public deposit details (bKash/TRX)
+router.get('/methods', auth, async (req, res) => {
+    try {
+        const config = await Game.findOne();
+        res.json({
+            success: true,
+            payment: config?.payment || {
+                bkash: { number: "017XXXXXXXX", active: true },
+                nagad: { number: "018XXXXXXXX", active: true },
+                trx: { address: "TY123...456", active: true },
+                conversionRate: 15
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 // @route   POST api/payment/deposit
 // @desc    Handle deposit requests (Manual bKash/Nagad or TRX)
@@ -12,17 +30,17 @@ router.post('/deposit', auth, async (req, res) => {
     const { amount, method, transactionId, senderNumber } = req.body;
     
     try {
+        const config = await Game.findOne();
+        const conversionRate = config?.payment?.conversionRate || 15;
+
         const trxAmount = parseFloat(amount);
         if (isNaN(trxAmount) || trxAmount <= 0) {
             return res.status(400).json({ message: 'Invalid amount. Must be greater than 0.' });
         }
         let bdtAmount = 0;
 
-        // If the user entered amount in BDT for mobile banking, convert it to TRX
-        // Or if they entered TRX, we calculate what BDT they should have sent.
-        // Let's assume the user enters the TRX amount they WANT, and the UI tells them BDT.
         if (method === 'bkash' || method === 'nagad') {
-            bdtAmount = trxAmount * TRX_TO_BDT_RATE;
+            bdtAmount = trxAmount * conversionRate;
         }
 
         const transaction = new Transaction({
@@ -37,7 +55,7 @@ router.post('/deposit', auth, async (req, res) => {
                 senderNumber: senderNumber,
                 timestamp: new Date(),
                 bdtAmount: bdtAmount > 0 ? bdtAmount : null,
-                conversionRate: bdtAmount > 0 ? TRX_TO_BDT_RATE : null
+                conversionRate: bdtAmount > 0 ? conversionRate : null
             },
             description: `Deposit via ${method.toUpperCase()}${bdtAmount > 0 ? ` (${bdtAmount} BDT)` : ''}`
         });
@@ -56,6 +74,9 @@ router.post('/withdraw', auth, async (req, res) => {
     const { amount, method, accountDetails } = req.body;
     
     try {
+        const config = await Game.findOne();
+        const conversionRate = config?.payment?.conversionRate || 15;
+
         const trxAmount = parseFloat(amount);
         if (isNaN(trxAmount) || trxAmount <= 0) {
             return res.status(400).json({ message: 'Invalid amount. Must be greater than 0.' });
@@ -71,7 +92,7 @@ router.post('/withdraw', auth, async (req, res) => {
         
         let bdtAmount = 0;
         if (method === 'bkash' || method === 'nagad') {
-            bdtAmount = trxAmount * TRX_TO_BDT_RATE;
+            bdtAmount = trxAmount * conversionRate;
         }
 
         const transaction = new Transaction({
@@ -83,7 +104,7 @@ router.post('/withdraw', auth, async (req, res) => {
             paymentMethod: method,
             metadata: {
                 accountDetails: accountDetails,
-                conversionRate: method !== 'trx' ? TRX_TO_BDT_RATE : null,
+                conversionRate: method !== 'trx' ? conversionRate : null,
                 bdtAmount: bdtAmount > 0 ? bdtAmount : null
             },
             description: `Withdrawal to ${method.toUpperCase()}: ${accountDetails}${bdtAmount > 0 ? ` (${bdtAmount} BDT)` : ''}`
