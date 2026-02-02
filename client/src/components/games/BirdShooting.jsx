@@ -232,22 +232,11 @@ class BirdSystem3D {
 
       const texture = this.textureLoader.load(textureUrl, (tex) => {
           const img = tex.image;
-          let cols = 1, rows = 1;
-          const aspect = img.width / img.height;
+          // Updated Specification: 1 column × 5 rows (Vertical Strip)
+          const cols = 1;
+          const rows = 5;
+          const frames = 5;
           
-          // Smart Sprite System: Detect Grid Dimensions (Handles 2x3, 3x2, and strips)
-          if (img.width === 1024 && img.height === 1536) { cols = 2; rows = 3; }
-          else if (img.width === 1536 && img.height === 1024) { cols = 3; rows = 2; }
-          else if (img.width === 64 && img.height === 192) { cols = 1; rows = 6; }
-          else if (aspect > 1.1) {
-              cols = Math.round(aspect);
-              rows = 1;
-          } else if (aspect < 0.9) {
-              cols = 1;
-              rows = Math.round(1 / aspect);
-          }
-          
-          const frames = cols * rows;
           const frameAspect = (img.width / cols) / (img.height / rows);
           
           tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -303,9 +292,9 @@ class BirdSystem3D {
         isDying: false,
         spawned: index === 0,
         animTime: Math.random() * 10,
-        frames: 1, 
+        frames: 5, 
         cols: 1,
-        rows: 1
+        rows: 5
       };
       
       this.birds.push(bird);
@@ -366,23 +355,25 @@ class BirdSystem3D {
         this.spawnNext();
       }
 
-      // Sprite Sheet Animation (Grid Support)
+      // Sprite Sheet Animation (1x5 Vertical Strip Support)
       bird.animTime += deltaTime;
-      const animationSpeed = 10; 
+      const animationSpeed = 12; 
       
-      const frameCount = bird.frames || 1;
+      const frameCount = bird.frames || 5;
       const frame = Math.floor(bird.animTime * animationSpeed) % frameCount;
       
       const cols = bird.cols || 1;
-      const rows = bird.rows || 1;
-      const col = frame % cols;
-      const row = Math.floor(frame / cols);
+      const rows = bird.rows || 5;
+      const col = 0; // Always 0 for 1x5
+      const row = frame; // 0 to 4
       
-      bird.mesh.material.map.offset.x = col / cols;
+      bird.mesh.material.map.offset.x = 0;
+      // UV Y=1 is Top. For Row 0 (Top Frame), offset should show Y [0.8, 1.0].
+      // Offset Y is the bottom-left of the window.
       bird.mesh.material.map.offset.y = 1 - ((row + 1) / rows);
       
       bird.mesh.lookAt(bird.mesh.position.clone().add(bird.velocity));
-      bird.mesh.rotateY(-Math.PI / 2); // Corrected rotation to prevent backward flying
+      bird.mesh.rotateY(-Math.PI / 2); // Facing direction of flight
     }
   }
 
