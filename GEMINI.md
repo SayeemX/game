@@ -156,6 +156,7 @@ Fix66: Implemented "Auto-Discovery Asset System". Moved bird assets to `src/asse
 Fix67: Architected the "Finance Control System". Added dynamic Payment Gateway management to Admin Dashboard, allowing real-time updates to bKash/Nagad numbers and TRX addresses. Implemented an authoritative Transaction Processing queue for manual approval/rejection of deposits and withdrawals with automated user balance synchronization. Added atomic `$inc` security to all financial routes to prevent concurrency exploits.
 Fix68: Hardened system-wide logic synchronization. Implemented authoritative server-side ammo validation, atomic reward distribution in Bird Shooting, and synchronized 150-unit world coordinates (-70 to 80). Refactored Shop and Redeem routes to utilize atomic Mongoose operations, ensuring 100% data integrity under high concurrent load.
 Fix69: Refactored API and Socket.io services to utilize environment variables (VITE_API_URL, CLIENT_URL) for enhanced deployment flexibility. Created .env.example templates and updated root .gitignore to pro-actively exclude sensitive and local-only files.
+Fix70: Resolved "Backward Flying" bug and upgraded the "Smart Sprite System" to support grid-based sprite sheets (2x3, 3x2). Implemented dynamic geometry aspect-ratio adjustment to prevent texture squashing and synchronized 6-frame animation cycles across all bird assets.
 
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.

@@ -232,26 +232,35 @@ class BirdSystem3D {
 
       const texture = this.textureLoader.load(textureUrl, (tex) => {
           const img = tex.image;
-          let frames = 1;
-          let dir = 'h';
+          let cols = 1, rows = 1;
+          const aspect = img.width / img.height;
           
-          // Smart Sprite System: Detect Frames & Dir
-          if (img.width > img.height) {
-              dir = 'h';
-              frames = Math.round(img.width / img.height);
-              tex.wrapS = THREE.RepeatWrapping;
-              tex.repeat.set(1 / frames, 1);
-          } else {
-              dir = 'v';
-              frames = Math.round(img.height / img.width);
-              tex.wrapT = THREE.RepeatWrapping;
-              tex.repeat.set(1, 1 / frames);
+          // Smart Sprite System: Detect Grid Dimensions (Handles 2x3, 3x2, and strips)
+          if (img.width === 1024 && img.height === 1536) { cols = 2; rows = 3; }
+          else if (img.width === 1536 && img.height === 1024) { cols = 3; rows = 2; }
+          else if (img.width === 64 && img.height === 192) { cols = 1; rows = 6; }
+          else if (aspect > 1.1) {
+              cols = Math.round(aspect);
+              rows = 1;
+          } else if (aspect < 0.9) {
+              cols = 1;
+              rows = Math.round(1 / aspect);
           }
           
-          // Safe update via closure capture
+          const frames = cols * rows;
+          const frameAspect = (img.width / cols) / (img.height / rows);
+          
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          tex.repeat.set(1 / cols, 1 / rows);
+          
           if (bird) {
               bird.frames = frames;
-              bird.dir = dir;
+              bird.cols = cols;
+              bird.rows = rows;
+              
+              // Correct geometry aspect ratio to prevent squashing
+              bird.mesh.geometry.dispose();
+              bird.mesh.geometry = new THREE.PlaneGeometry(config.size * frameAspect, config.size);
           }
       });
       
@@ -265,8 +274,6 @@ class BirdSystem3D {
       });
       const mesh = new THREE.Mesh(geometry, material);
       
-      if (config.speed < 0) mesh.rotation.y = Math.PI; 
-
       // Initial Position
       const startX = -70; 
       const baseY = data.y + 10;
@@ -297,7 +304,8 @@ class BirdSystem3D {
         spawned: index === 0,
         animTime: Math.random() * 10,
         frames: 1, 
-        dir: 'h'
+        cols: 1,
+        rows: 1
       };
       
       this.birds.push(bird);
@@ -358,24 +366,23 @@ class BirdSystem3D {
         this.spawnNext();
       }
 
-      // Sprite Sheet Animation (Handle Dynamic H and V)
+      // Sprite Sheet Animation (Grid Support)
       bird.animTime += deltaTime;
       const animationSpeed = 10; 
       
-      // Use dynamic detected frames
       const frameCount = bird.frames || 1;
       const frame = Math.floor(bird.animTime * animationSpeed) % frameCount;
       
-      if (bird.dir === 'v') {
-          // Vertical offset
-          bird.mesh.material.map.offset.y = 1 - ((frame + 1) / frameCount);
-      } else {
-          // Horizontal offset
-          bird.mesh.material.map.offset.x = frame / frameCount;
-      }
+      const cols = bird.cols || 1;
+      const rows = bird.rows || 1;
+      const col = frame % cols;
+      const row = Math.floor(frame / cols);
+      
+      bird.mesh.material.map.offset.x = col / cols;
+      bird.mesh.material.map.offset.y = 1 - ((row + 1) / rows);
       
       bird.mesh.lookAt(bird.mesh.position.clone().add(bird.velocity));
-      bird.mesh.rotateY(Math.PI / 2);
+      bird.mesh.rotateY(-Math.PI / 2); // Corrected rotation to prevent backward flying
     }
   }
 
