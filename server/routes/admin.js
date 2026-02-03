@@ -7,6 +7,8 @@ const RedeemCode = require('../models/RedeemCode');
 const Transaction = require('../models/Transaction');
 const Game = require('../models/Game');
 const BirdWeapon = require('../models/BirdWeapon');
+const mongoose = require('mongoose');
+const CurrencyConfig = require('../models/CurrencyConfig');
 
 // @route   GET api/admin/stats
 router.get('/stats', auth, admin, async (req, res) => {
@@ -198,10 +200,39 @@ router.post('/payment-config', auth, admin, async (req, res) => {
     }
 });
 
+// --- Currency Config ---
+router.get('/currency-config', auth, admin, async (req, res) => {
+    try {
+        const configs = await CurrencyConfig.find();
+        res.json(configs);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.post('/currency-config', auth, admin, async (req, res) => {
+    try {
+        const { currency, minDeposit, maxDeposit, minWithdrawal, maxWithdrawal, allowDeposit, allowWithdrawal } = req.body;
+        const config = await CurrencyConfig.findOneAndUpdate(
+            { currency },
+            { minDeposit, maxDeposit, minWithdrawal, maxWithdrawal, allowDeposit, allowWithdrawal },
+            { new: true, upsert: true }
+        );
+        res.json(config);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // --- Transaction Management ---
 router.get('/transactions/pending', auth, admin, async (req, res) => {
     try {
-        const txs = await Transaction.find({ status: 'pending' })
+        const txs = await Transaction.find({
+            $or: [
+                { status: 'pending' }, // Pending withdrawals
+                { type: 'deposit', status: 'completed', 'metadata.autoApproved': true, 'metadata.adminReviewed': { $ne: true } } // Auto-approved, unreviewed deposits
+            ]
+        })
             .populate('userId', 'username email')
             .sort({ createdAt: -1 });
         res.json(txs);
@@ -212,41 +243,58 @@ router.get('/transactions/pending', auth, admin, async (req, res) => {
 
 router.post('/transactions/process', auth, admin, async (req, res) => {
     const { txId, action, reason } = req.body; // action: 'approve' or 'reject'
+    
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
     try {
-        const tx = await Transaction.findById(txId);
-        if (!tx || tx.status !== 'pending') {
-            return res.status(404).json({ message: 'Transaction not found or already processed' });
+        const tx = await Transaction.findById(txId).session(session);
+        if (!tx) {
+            return res.status(404).json({ message: 'Transaction not found' });
         }
 
-        const user = await User.findById(tx.userId);
-        if (!user) return res.status(404).json({ message: 'User not found' });
+        if (tx.status !== 'pending' && tx.type === 'withdrawal') {
+             return res.status(400).json({ message: 'Withdrawal has already been processed.' });
+        }
+        
+        if (tx.status !== 'completed' && tx.type === 'deposit') {
+             return res.status(400).json({ message: 'Deposit has already been processed.' });
+        }
 
-        if (action === 'approve') {
-            tx.status = 'completed';
-            tx.completedAt = new Date();
-            
-            // If it's a deposit, add the funds now
-            if (tx.type === 'deposit') {
-                user.wallet.mainBalance += tx.amount;
-                await user.save();
+        let userUpdate = {};
+        
+        if (tx.type === 'withdrawal') {
+            if (action === 'approve') {
+                tx.status = 'completed';
+                tx.completedAt = new Date();
+                userUpdate = { $inc: { 'wallet.heldBalance': -tx.amount } };
+            } else { // reject
+                tx.status = 'failed';
+                tx.description = `${tx.description} (Rejected: ${reason || 'N/A'})`;
+                userUpdate = { $inc: { 'wallet.mainBalance': tx.amount, 'wallet.heldBalance': -tx.amount } };
             }
-            // For withdrawal, funds were already deducted upon request. 
-            // So we just mark it as completed.
-        } else {
-            tx.status = 'failed';
-            tx.description = (tx.description || '') + ` (Rejected: ${reason || 'No reason provided'})`;
-            
-            // If it was a withdrawal, refund the user
-            if (tx.type === 'withdrawal') {
-                user.wallet.mainBalance += tx.amount;
-                await user.save();
+        } else if (tx.type === 'deposit') {
+            if (action === 'reject') {
+                tx.status = 'failed';
+                tx.description = `${tx.description} (Rejected: ${reason || 'N/A'})`;
+                userUpdate = { $inc: { 'wallet.mainBalance': -tx.amount } };
+            } else { // approve (already auto-approved)
+                tx.metadata.adminReviewed = true;
             }
         }
 
-        await tx.save();
+        await User.findByIdAndUpdate(tx.userId, userUpdate, { session });
+        await tx.save({ session });
+
+        await session.commitTransaction();
+        session.endSession();
+
         res.json({ success: true, transaction: tx });
     } catch (err) {
-        res.status(500).json({ error: 'Server error' });
+        await session.abortTransaction();
+        session.endSession();
+        console.error('Transaction processing error:', err);
+        res.status(500).json({ error: 'Server error during transaction processing' });
     }
 });
 

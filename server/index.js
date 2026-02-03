@@ -138,6 +138,8 @@ const SESSION_CHARGE_AMOUNT = 0.1;
 
 const chargeUserSession = async (userId, io, isAuto = false) => {
     try {
+        // Ensure the 'user' object is always available in scope if needed downstream
+        const user = await User.findById(userId);
         const session = activeSessions.get(userId);
         if (!session) return false;
 
@@ -201,7 +203,7 @@ const chargeUserSession = async (userId, io, isAuto = false) => {
         });
         
         await Transaction.create({
-            userId: user._id,
+            userId: userId,
             type: 'game_bet',
             amount: SESSION_CHARGE_AMOUNT,
             currency: 'TRX',

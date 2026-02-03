@@ -16,6 +16,7 @@ import {
   Database
 } from 'lucide-react';
 import { adminAPI } from '../services/api';
+import CurrencyConfigManager from '../components/CurrencyConfigManager';
 
 const AdminDashboard = () => {
   const { user } = useSelector(state => state.user);
@@ -27,6 +28,7 @@ const AdminDashboard = () => {
   const [spinConfig, setSpinConfig] = useState(null);
   const [birdConfig, setBirdConfig] = useState(null);
   const [paymentConfig, setPaymentConfig] = useState(null);
+  const [currencyConfigs, setCurrencyConfigs] = useState([]);
   const [pendingTxs, setPendingTxs] = useState([]);
   const [selectedTier, setSelectedTier] = useState('BRONZE');
   const [loading, setLoading] = useState(true);
@@ -74,9 +76,11 @@ const AdminDashboard = () => {
       } else if (activeTab === 'finance') {
         const configRes = await adminAPI.getPaymentConfig();
         const txRes = await adminAPI.getPendingTransactions();
+        const currencyRes = await adminAPI.getCurrencyConfigs();
         setPaymentConfig(configRes.data);
         setPaymentConfigForm(configRes.data);
         setPendingTxs(txRes.data);
+        setCurrencyConfigs(currencyRes.data);
       }
     } catch (err) {
       setError('Failed to fetch admin data');
@@ -323,19 +327,31 @@ const AdminDashboard = () => {
                                                     <div className="text-[8px] text-gray-500">{new Date(tx.createdAt).toLocaleString()}</div>
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <div className="flex gap-2">
-                                                        <button 
-                                                            onClick={() => handleProcessTx(tx._id, 'approve')}
-                                                            className="px-3 py-1 bg-green-500/10 text-green-500 border border-green-500/20 rounded-lg text-[8px] font-black uppercase hover:bg-green-500 hover:text-black transition-all"
-                                                        >
-                                                            Approve
-                                                        </button>
-                                                        <button 
+                                                <div className="flex gap-2">
+                                                    {tx.type === 'withdrawal' && (
+                                                        <>
+                                                            <button 
+                                                                onClick={() => handleProcessTx(tx._id, 'approve')}
+                                                                className="px-3 py-1 bg-green-500/10 text-green-500 border border-green-500/20 rounded-lg text-[8px] font-black uppercase hover:bg-green-500 hover:text-black transition-all"
+                                                            >
+                                                                Approve
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleProcessTx(tx._id, 'reject')}
+                                                                className="px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-[8px] font-black uppercase hover:bg-red-500 hover:text-black transition-all"
+                                                            >
+                                                                Reject
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {tx.type === 'deposit' && (
+                                                         <button 
                                                             onClick={() => handleProcessTx(tx._id, 'reject')}
                                                             className="px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-[8px] font-black uppercase hover:bg-red-500 hover:text-black transition-all"
                                                         >
                                                             Reject
                                                         </button>
+                                                    )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -346,53 +362,56 @@ const AdminDashboard = () => {
                         </div>
 
                         {/* Payment Config */}
-                        <div className="bg-[#1a2c38] border border-gray-800 rounded-[2.5rem] p-8 h-fit">
-                            <h2 className="text-xl font-black uppercase tracking-tighter mb-6">Payment Gateway</h2>
-                            <div className="space-y-6">
-                                <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-4">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-black uppercase text-gray-500">bKash Number</span>
-                                        <input type="checkbox" checked={paymentForm.bkash.active} onChange={e => setPaymentConfigForm({...paymentForm, bkash: {...paymentForm.bkash, active: e.target.checked}})} />
+                        <div className="space-y-8">
+                            <div className="bg-[#1a2c38] border border-gray-800 rounded-[2.5rem] p-8 h-fit">
+                                <h2 className="text-xl font-black uppercase tracking-tighter mb-6">Payment Gateway</h2>
+                                <div className="space-y-6">
+                                    <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-black uppercase text-gray-500">bKash Number</span>
+                                            <input type="checkbox" checked={paymentForm.bkash.active} onChange={e => setPaymentConfigForm({...paymentForm, bkash: {...paymentForm.bkash, active: e.target.checked}})} />
+                                        </div>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-3 bg-black border border-gray-800 rounded-xl text-sm font-bold"
+                                            value={paymentForm.bkash.number}
+                                            onChange={e => setPaymentConfigForm({...paymentForm, bkash: {...paymentForm.bkash, number: e.target.value}})}
+                                        />
                                     </div>
-                                    <input 
-                                        type="text" 
-                                        className="w-full p-3 bg-black border border-gray-800 rounded-xl text-sm font-bold"
-                                        value={paymentForm.bkash.number}
-                                        onChange={e => setPaymentConfigForm({...paymentForm, bkash: {...paymentForm.bkash, number: e.target.value}})}
-                                    />
-                                </div>
 
-                                <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-4">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-black uppercase text-gray-500">TRX (TRC20) Address</span>
-                                        <input type="checkbox" checked={paymentForm.trx.active} onChange={e => setPaymentConfigForm({...paymentForm, trx: {...paymentForm.trx, active: e.target.checked}})} />
+                                    <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-black uppercase text-gray-500">TRX (TRC20) Address</span>
+                                            <input type="checkbox" checked={paymentForm.trx.active} onChange={e => setPaymentConfigForm({...paymentForm, trx: {...paymentForm.trx, active: e.target.checked}})} />
+                                        </div>
+                                        <input 
+                                            type="text" 
+                                            className="w-full p-3 bg-black border border-gray-800 rounded-xl text-[10px] font-bold"
+                                            value={paymentForm.trx.address}
+                                            onChange={e => setPaymentConfigForm({...paymentForm, trx: {...paymentForm.trx, address: e.target.value}})}
+                                        />
                                     </div>
-                                    <input 
-                                        type="text" 
-                                        className="w-full p-3 bg-black border border-gray-800 rounded-xl text-[10px] font-bold"
-                                        value={paymentForm.trx.address}
-                                        onChange={e => setPaymentConfigForm({...paymentForm, trx: {...paymentForm.trx, address: e.target.value}})}
-                                    />
-                                </div>
 
-                                <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-2">
-                                    <label className="text-[10px] font-black uppercase text-gray-500">Conversion Rate (1 TRX = ? BDT)</label>
-                                    <input 
-                                        type="number" 
-                                        className="w-full p-3 bg-black border border-gray-800 rounded-xl text-sm font-bold"
-                                        value={paymentForm.conversionRate}
-                                        onChange={e => setPaymentConfigForm({...paymentForm, conversionRate: parseFloat(e.target.value)})}
-                                    />
-                                </div>
+                                    <div className="p-4 bg-black/40 border border-gray-800 rounded-2xl space-y-2">
+                                        <label className="text-[10px] font-black uppercase text-gray-500">Conversion Rate (1 TRX = ? BDT)</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-full p-3 bg-black border border-gray-800 rounded-xl text-sm font-bold"
+                                            value={paymentForm.conversionRate}
+                                            onChange={e => setPaymentConfigForm({...paymentForm, conversionRate: parseFloat(e.target.value)})}
+                                        />
+                                    </div>
 
-                                <button 
-                                    onClick={handleSavePaymentConfig}
-                                    disabled={formLoading}
-                                    className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl uppercase tracking-widest transition-all"
-                                >
-                                    {formLoading ? <Loader2 className="animate-spin mx-auto w-5 h-5" /> : 'Save Gateway Settings'}
-                                </button>
+                                    <button 
+                                        onClick={handleSavePaymentConfig}
+                                        disabled={formLoading}
+                                        className="w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black rounded-2xl uppercase tracking-widest transition-all"
+                                    >
+                                        {formLoading ? <Loader2 className="animate-spin mx-auto w-5 h-5" /> : 'Save Gateway Settings'}
+                                    </button>
+                                </div>
                             </div>
+                            <CurrencyConfigManager configs={currencyConfigs} onSave={fetchData} />
                         </div>
                     </div>
                 )}

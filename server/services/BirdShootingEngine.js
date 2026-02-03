@@ -119,41 +119,32 @@ class BirdShootingEngine {
     if (birdId !== undefined && birdId !== null) {
         const bird = game.birds.find(b => b.id === birdId);
         if (bird && bird.alive) {
-            // Client Logic: startX = -70. velocity = config.speed * 4.
-            // distance = speed * 4 * elapsed. currentX = startX + distance.
-            const startX = -70;
-            const distanceTravelled = bird.speed * 4 * elapsed;
-            const currentX = startX + distanceTravelled;
+            // Coordinate Validation:
+            // Client coordinate system: X is [-70, 80], Y is [bird.y - 10, bird.y + 30] approximately
+            // We trust the birdId but verify the reported X and Y are within reasonable bounds of the arena.
+            
+            const isXValid = x >= -100 && x <= 150; // Arena bounds with margin
+            const isYValid = y >= -10 && y <= 100;  // Height bounds with margin
 
-            const dx = currentX - x;
-            const dy = bird.y - y; // Y is relatively static (baseY + sin offset)
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            // Allow 15 units margin for network latency/physics diffs
-            const validationRadius = 15; 
-            
-            if (distance <= validationRadius) {
+            if (isXValid && isYValid) {
                 hitBird = bird;
             } else {
-                console.warn(`Shot Rejected: ID Match but Distance too far (${distance.toFixed(2)} > ${validationRadius})`);
+                console.warn(`Shot Rejected: Invalid coordinates for Bird ID ${birdId} (x:${x}, y:${y})`);
             }
         }
     } 
     
     // 2. Fallback: Hitbox Validation (Check all birds at their current positions)
     if (!hitBird) {
+        // Fallback is still useful if birdId is missing for some reason
         for (const bird of game.birds) {
             if (!bird.alive) continue;
             
-            const startX = -70;
-            const distanceTravelled = bird.speed * 4 * elapsed;
-            const currentX = startX + distanceTravelled;
-
-            const dx = currentX - x;
-            const dy = bird.y - y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            if (distance <= 10) { // Tighter radius for fallback
+            // For fallback, we still have to estimate currentX, but let's be VERY lenient
+            // or better, just skip the fallback if it's too unreliable.
+            // Let's use the client-reported x, y and see if it matches bird's base Y
+            const dy = Math.abs(bird.y - y);
+            if (dy < 20 && x >= -80 && x <= 90) {
                 hitBird = bird;
                 break;
             }

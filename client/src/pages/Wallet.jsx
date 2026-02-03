@@ -21,7 +21,7 @@ import {
   Zap,
   Target
 } from 'lucide-react';
-import { paymentAPI } from '../services/api';
+import { paymentAPI, adminAPI } from '../services/api';
 import { updateWallet } from '../redux/slices/userSlice';
 
 const Wallet = () => {
@@ -34,6 +34,7 @@ const Wallet = () => {
   const [formLoading, setFormLoading] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [paymentConfig, setPaymentConfig] = useState(null);
+  const [currencyConfigs, setCurrencyConfigs] = useState([]);
 
   // Form States
   const [depositData, setDepositData] = useState({ amount: '', method: 'bkash', transactionId: '', senderNumber: '' });
@@ -44,8 +45,18 @@ const Wallet = () => {
     if (isAuthenticated) {
         fetchHistory();
         fetchPaymentConfig();
+        fetchCurrencyConfigs();
     }
   }, [isAuthenticated]);
+
+  const fetchCurrencyConfigs = async () => {
+    try {
+      const res = await adminAPI.getCurrencyConfigs();
+      setCurrencyConfigs(res.data);
+    } catch (err) {
+      console.error("Failed to fetch currency configs");
+    }
+  };
 
   const fetchPaymentConfig = async () => {
       try {
@@ -71,11 +82,25 @@ const Wallet = () => {
   const handleDeposit = async (e) => {
     e.preventDefault();
     setFormLoading(true);
+
+    const currency = 'TRX'; // Assuming TRX for now
+    const config = currencyConfigs.find(c => c.currency === currency);
+    const amount = parseFloat(depositData.amount);
+
+    if (config) {
+        if (amount < config.minDeposit || amount > config.maxDeposit) {
+            setStatus({ type: 'error', message: `Amount must be between ${config.minDeposit} and ${config.maxDeposit} ${currency}.` });
+            setFormLoading(false);
+            return;
+        }
+    }
+
     try {
       const res = await paymentAPI.deposit(depositData);
       setStatus({ type: 'success', message: res.data.message });
       setDepositData({ amount: '', method: 'bkash', transactionId: '', senderNumber: '' });
       fetchHistory();
+      dispatch(updateWallet(res.data.wallet));
     } catch (err) {
       setStatus({ type: 'error', message: err.response?.data?.message || 'Deposit failed' });
     } finally {
@@ -86,6 +111,19 @@ const Wallet = () => {
   const handleWithdraw = async (e) => {
     e.preventDefault();
     setFormLoading(true);
+
+    const currency = 'TRX'; // Assuming TRX for now
+    const config = currencyConfigs.find(c => c.currency === currency);
+    const amount = parseFloat(withdrawData.amount);
+
+    if (config) {
+        if (amount < config.minWithdrawal || amount > config.maxWithdrawal) {
+            setStatus({ type: 'error', message: `Amount must be between ${config.minWithdrawal} and ${config.maxWithdrawal} ${currency}.` });
+            setFormLoading(false);
+            return;
+        }
+    }
+
     try {
       const res = await paymentAPI.withdraw(withdrawData);
       dispatch(updateWallet(res.data.wallet));
@@ -147,6 +185,14 @@ const Wallet = () => {
                     <div className="text-center md:text-right">
                         <p className="text-[8px] sm:text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">Bonus Balance</p>
                         <p className="text-xl sm:text-2xl font-black text-yellow-500">{wallet.bonusBalance.toFixed(2)} TRX</p>
+                    </div>
+                     <div className="text-center md:text-right">
+                        <p className="text-[8px] sm:text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">On Hold</p>
+                        <p className="text-xl sm:text-2xl font-black text-orange-500">{wallet.heldBalance.toFixed(2)} TRX</p>
+                    </div>
+                     <div className="text-center md:text-right">
+                        <p className="text-[8px] sm:text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-1">Pending Deposit</p>
+                        <p className="text-xl sm:text-2xl font-black text-blue-500">{wallet.pendingBalance.toFixed(2)} TRX</p>
                     </div>
                 </div>
             </div>

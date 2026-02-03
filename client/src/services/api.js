@@ -94,6 +94,12 @@ export const adminAPI = {
   updateSpinConfig: (data) => api.post('/admin/spin-config', data),
   getBirdConfig: () => api.get('/admin/bird-config'),
   updateBirdConfig: (data) => api.post('/admin/bird-config', data),
+  getPaymentConfig: () => api.get('/admin/payment-config'),
+  updatePaymentConfig: (data) => api.post('/admin/payment-config', data),
+  getPendingTransactions: () => api.get('/admin/transactions/pending'),
+  processTransaction: (data) => api.post('/admin/transactions/process', data),
+  getCurrencyConfigs: () => api.get('/admin/currency-config'),
+  updateCurrencyConfig: (data) => api.post('/admin/currency-config', data),
   // Shop management
   getShopItems: () => api.get('/admin/shop-items'),
   createShopItem: (data) => api.post('/admin/shop-items', data),

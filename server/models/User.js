@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema({
   wallet: {
     mainBalance: { type: Number, default: 0, min: 0 },
     bonusBalance: { type: Number, default: 0, min: 0 },
+    heldBalance: { type: Number, default: 0, min: 0 }, // For withdrawals
+    pendingBalance: { type: Number, default: 0, min: 0 }, // For deposits
     // Use Mixed to completely bypass Mongoose type checking for this field
     // and prevent "Cast to Number" errors from legacy schema definitions
     spinCredits: { 

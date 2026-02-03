@@ -4,6 +4,7 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const Game = require('../models/Game');
+const CurrencyConfig = require('../models/CurrencyConfig');
 
 // @route   GET api/payment/methods
 // @desc    Get public deposit details (bKash/TRX)
@@ -27,16 +28,25 @@ router.get('/methods', auth, async (req, res) => {
 // @route   POST api/payment/deposit
 // @desc    Handle deposit requests (Manual bKash/Nagad or TRX)
 router.post('/deposit', auth, async (req, res) => {
-    const { amount, method, transactionId, senderNumber } = req.body;
+    const { amount, method, transactionId, senderNumber, currency = 'TRX' } = req.body;
     
     try {
-        const config = await Game.findOne();
-        const conversionRate = config?.payment?.conversionRate || 15;
+        const currencyConfig = await CurrencyConfig.findOne({ currency });
+        if (!currencyConfig || !currencyConfig.allowDeposit) {
+            return res.status(400).json({ message: 'Deposits for this currency are currently disabled.' });
+        }
 
         const trxAmount = parseFloat(amount);
         if (isNaN(trxAmount) || trxAmount <= 0) {
             return res.status(400).json({ message: 'Invalid amount. Must be greater than 0.' });
         }
+
+        if (trxAmount < currencyConfig.minDeposit || trxAmount > currencyConfig.maxDeposit) {
+            return res.status(400).json({ message: `Deposit amount must be between ${currencyConfig.minDeposit} and ${currencyConfig.maxDeposit} ${currency}.` });
+        }
+
+        const config = await Game.findOne();
+        const conversionRate = config?.payment?.conversionRate || 15;
         let bdtAmount = 0;
 
         if (method === 'bkash' || method === 'nagad') {
@@ -47,21 +57,30 @@ router.post('/deposit', auth, async (req, res) => {
             userId: req.user.id,
             type: 'deposit',
             amount: trxAmount,
-            currency: 'TRX',
-            status: 'pending',
+            currency,
+            status: 'completed', // Auto-approve deposit temporarily
             paymentMethod: method,
             transactionId: transactionId,
             metadata: {
                 senderNumber: senderNumber,
                 timestamp: new Date(),
                 bdtAmount: bdtAmount > 0 ? bdtAmount : null,
-                conversionRate: bdtAmount > 0 ? conversionRate : null
+                conversionRate: bdtAmount > 0 ? conversionRate : null,
+                autoApproved: true
             },
-            description: `Deposit via ${method.toUpperCase()}${bdtAmount > 0 ? ` (${bdtAmount} BDT)` : ''}`
+            description: `Deposit via ${method.toUpperCase()}${bdtAmount > 0 ? ` (${bdtAmount} BDT)` : ''}`,
+            completedAt: new Date()
         });
 
         await transaction.save();
-        res.json({ success: true, message: 'Deposit request submitted. Waiting for verification.', transaction });
+
+        const user = await User.findByIdAndUpdate(
+            req.user.id,
+            { $inc: { 'wallet.mainBalance': trxAmount } },
+            { new: true }
+        );
+
+        res.json({ success: true, message: 'Deposit successful and auto-approved.', transaction, wallet: user.wallet });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
@@ -71,15 +90,21 @@ router.post('/deposit', auth, async (req, res) => {
 // @route   POST api/payment/withdraw
 // @desc    Handle withdrawal requests
 router.post('/withdraw', auth, async (req, res) => {
-    const { amount, method, accountDetails } = req.body;
+    const { amount, method, accountDetails, currency = 'TRX' } = req.body;
     
     try {
-        const config = await Game.findOne();
-        const conversionRate = config?.payment?.conversionRate || 15;
+        const currencyConfig = await CurrencyConfig.findOne({ currency });
+        if (!currencyConfig || !currencyConfig.allowWithdrawal) {
+            return res.status(400).json({ message: 'Withdrawals for this currency are currently disabled.' });
+        }
 
         const trxAmount = parseFloat(amount);
         if (isNaN(trxAmount) || trxAmount <= 0) {
             return res.status(400).json({ message: 'Invalid amount. Must be greater than 0.' });
+        }
+
+        if (trxAmount < currencyConfig.minWithdrawal || trxAmount > currencyConfig.maxWithdrawal) {
+            return res.status(400).json({ message: `Withdrawal amount must be between ${currencyConfig.minWithdrawal} and ${currencyConfig.maxWithdrawal} ${currency}.` });
         }
 
         const user = await User.findById(req.user.id);
@@ -87,9 +112,19 @@ router.post('/withdraw', auth, async (req, res) => {
             return res.status(400).json({ message: 'Insufficient balance' });
         }
 
-        // Deduct balance immediately for withdrawal request
-        user.wallet.mainBalance -= trxAmount;
+        // Move funds to heldBalance
+        const updatedUser = await User.findOneAndUpdate(
+            { _id: req.user.id, 'wallet.mainBalance': { $gte: trxAmount } },
+            { $inc: { 'wallet.mainBalance': -trxAmount, 'wallet.heldBalance': trxAmount } },
+            { new: true }
+        );
+
+        if (!updatedUser) {
+            return res.status(400).json({ message: 'Insufficient balance or concurrent transaction failed.' });
+        }
         
+        const config = await Game.findOne();
+        const conversionRate = config?.payment?.conversionRate || 15;
         let bdtAmount = 0;
         if (method === 'bkash' || method === 'nagad') {
             bdtAmount = trxAmount * conversionRate;
@@ -99,7 +134,7 @@ router.post('/withdraw', auth, async (req, res) => {
             userId: req.user.id,
             type: 'withdrawal',
             amount: trxAmount,
-            currency: 'TRX',
+            currency,
             status: 'pending',
             paymentMethod: method,
             metadata: {
@@ -110,10 +145,9 @@ router.post('/withdraw', auth, async (req, res) => {
             description: `Withdrawal to ${method.toUpperCase()}: ${accountDetails}${bdtAmount > 0 ? ` (${bdtAmount} BDT)` : ''}`
         });
 
-        await user.save();
         await transaction.save();
         
-        res.json({ success: true, message: 'Withdrawal request submitted.', wallet: user.wallet });
+        res.json({ success: true, message: 'Withdrawal request submitted.', wallet: updatedUser.wallet });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }

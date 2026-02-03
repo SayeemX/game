@@ -626,6 +626,11 @@ class BowSystem3D {
             } else {
                 this.handleMouseUp(e);
             }
+        } else if (e.button === 2) { // Right click for shooting
+            if (this.isHeld) {
+                this.shoot();
+                this.isHeld = false;
+            }
         }
     };
 
@@ -647,11 +652,13 @@ class BowSystem3D {
     
     element.addEventListener('mousedown', (e) => {
         if(e.button === 0) this._onMouseDown(e);
-        if(e.button === 2) {
-            if (document.pointerLockElement !== element) element.requestPointerLock();
-        }
     });
     element.addEventListener('mouseup', this._onMouseUp);
+    // Add contextmenu listener for right-click to toggle scope
+    element.addEventListener('contextmenu', (e) => {
+        e.preventDefault(); // Prevent default context menu
+        this.toggleScope();
+    });
     element.addEventListener('wheel', this._onWheel, { passive: false });
     document.addEventListener('mousemove', this._onMouseMove);
 
@@ -854,6 +861,10 @@ class BowSystem3D {
   nock() {
       if (this.isNocked || this.isDrawn || this.game.gameData.ammo <= 0) return;
       this.isNocked = true;
+      if (!this.isScoped) { // Only toggle scope if not already scoped
+        this.toggleScope();
+      }
+      this.setZoomIndex(0); // Set zoom to 2x (first zoom step)
       this.game.haptics.trigger('draw_start');
       
       this.loadedArrow = new Arrow(new THREE.Vector3(), new THREE.Vector3(0,0,1));
@@ -948,6 +959,16 @@ class BowSystem3D {
           return;
       }
       this.game.gameData.ammo--;
+
+      // Unscope immediately on shot
+      if (this.isScoped) {
+          this.isScoped = false;
+          this.scopeCrosshair.visible = false;
+          this.targetZoom = 1;
+          this.currentZoom = 1;
+          this.applyZoom();
+          if (this.game.onScopeExit) this.game.onScopeExit();
+      }
 
       this.isNocked = false;
       this.isTracking = true; 
@@ -1451,8 +1472,8 @@ class HuntingGame3D {
                               power: arrow.charge,
                               hit: true,
                               birdId: bird.serverId,
-                              x: (bird.mesh.position.x + 50),
-                              y: (bird.mesh.position.y - 10)
+                              x: bird.mesh.position.x,
+                              y: bird.mesh.position.y
                           });
                       }
 

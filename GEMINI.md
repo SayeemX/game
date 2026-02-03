@@ -159,6 +159,12 @@ Fix69: Refactored API and Socket.io services to utilize environment variables (V
 Fix70: Resolved "Backward Flying" bug and upgraded the "Smart Sprite System" to support grid-based sprite sheets (2x3, 3x2). Implemented dynamic geometry aspect-ratio adjustment to prevent texture squashing and synchronized 6-frame animation cycles across all bird assets.
 Fix71: Transitioned bird animation system to strictly support 1x5 vertical sprite sheets (top-to-bottom) as per final asset specification. Optimized UV offset calculations for vertical strips and verified flight orientation consistency.
 
+Fix72: Resolved "ReferenceError: user is not defined" in `chargeUserSession` by explicitly fetching the `User` document at the beginning of the function, ensuring the `user` object is always available in scope.
+
+Fix73: Implemented automatic scope behavior in Bird Shooting: auto-zoom to 2x (first zoom step) when an arrow is nocked, and immediate unscoping upon firing a shot, while preserving the cinematic camera follow.
+
+Fix74: Configured desktop mouse controls for Bird Shooting: right-click now toggles the scope (open/close) and also triggers shooting when the bow is drawn and held.
+
 ### **Recent Features Added:**
 - **Cancel Shot**: Added UI button and ESC key support to abort arrow draws without wasting ammo.
 - **Desktop Controls**: Full keyboard support (Space to Draw/Shoot, ESC to Cancel).
