@@ -17,7 +17,7 @@ export const AuthProvider = ({ children }) => {
 
       // Initialize Socket
       // Derives from services/api.js API_URL
-      const socketUrl = API_URL.replace(/\/api$/, '');
+      const socketUrl = import.meta.env.VITE_API_WS || API_URL.replace(/\/api$/, '');
       
       const newSocket = io(socketUrl, {
           auth: { token }

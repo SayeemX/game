@@ -19,10 +19,21 @@ const birdShootingEngine = require('./services/BirdShootingEngine');
 const app = express();
 const server = http.createServer(app);
 
-// Socket.io Setup with dynamic CORS
+// Allowed origins for CORS (used by both Express and Socket.IO)
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? [process.env.CLIENT_URL, 'https://gamex-th2n.onrender.com', 'https://sayeemx.github.io']
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
+// Socket.io Setup with dynamic CORS using the same allowed origins
 const io = new Server(server, {
     cors: {
-        origin: process.env.CLIENT_URL || "*",
+        origin: function(origin, callback) {
+            if (!origin || allowedOrigins.includes(origin) || (typeof origin === 'string' && origin.endsWith('.github.io'))) {
+                callback(null, true);
+            } else {
+                callback(new Error('CORS policy violation'));
+            }
+        },
         methods: ["GET", "POST"],
         credentials: true
     }
@@ -32,16 +43,6 @@ const io = new Server(server, {
 app.use(helmet({
   contentSecurityPolicy: false, // Set to true and configure if using specialized CDNs
 }));
-
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://gamex-th2n.onrender.com',
-  'https://sayeemx.github.io',
-  'https://SayeemX.github.io',
-  process.env.CLIENT_URL
-].filter(Boolean);
-
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.github.io')) {

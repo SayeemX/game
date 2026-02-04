@@ -7,7 +7,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import { Target, Trophy, Zap, Gamepad2, AlertCircle, ShieldCheck, Home, ShoppingBag, User as UserIcon, Coins, RotateCw, ChevronUp, ChevronDown, Clock } from 'lucide-react';
 import { AuthContext } from '../../context/AuthContext';
-import { updateWallet, setUserData, updateInventory } from '../../redux/slices/userSlice';
+import { updateWallet, setUserData, updateInventory, fetchUserProfile } from '../../redux/slices/userSlice';
 import { shopAPI } from '../../services/api';
 
 import Arrow from '../../entities/Arrow';
@@ -504,25 +504,70 @@ class BowSystem3D {
 
   createScopeCrosshair() {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
+    canvas.width = 512;
+    canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    ctx.strokeStyle = '#3bc117';
-    ctx.lineWidth = 4;
-    // Main Cross
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(0, 0, 512, 512);
+    
+    // Draw vignette circle (scope overlay)
+    const gradient = ctx.createRadialGradient(256, 256, 150, 256, 256, 256);
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+    ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.moveTo(128, 20); ctx.lineTo(128, 236); 
-    ctx.moveTo(20, 128); ctx.lineTo(236, 128); 
+    ctx.arc(256, 256, 256, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Reticle color - bright green
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 3;
+    
+    // Center dot
+    ctx.fillStyle = '#00ff00';
+    ctx.beginPath();
+    ctx.arc(256, 256, 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Horizontal crosshairs (with gap in center)
+    const gap = 40;
+    const armLength = 100;
+    
+    // Left horizontal
+    ctx.beginPath();
+    ctx.moveTo(256 - armLength, 256);
+    ctx.lineTo(256 - gap, 256);
     ctx.stroke();
-    // Circle
+    
+    // Right horizontal
+    ctx.beginPath();
+    ctx.moveTo(256 + gap, 256);
+    ctx.lineTo(256 + armLength, 256);
+    ctx.stroke();
+    
+    // Top vertical
+    ctx.beginPath();
+    ctx.moveTo(256, 256 - armLength);
+    ctx.lineTo(256, 256 - gap);
+    ctx.stroke();
+    
+    // Bottom vertical
+    ctx.beginPath();
+    ctx.moveTo(256, 256 + gap);
+    ctx.lineTo(256, 256 + armLength);
+    ctx.stroke();
+    
+    // Outer circle for zoom reference
     ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
     ctx.beginPath();
-    ctx.arc(128, 128, 100, 0, Math.PI * 2);
+    ctx.arc(256, 256, 120, 0, Math.PI * 2);
     ctx.stroke();
+    
     const texture = new THREE.CanvasTexture(canvas);
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, sizeAttenuation: false });
     const sprite = new THREE.Sprite(material);
-    sprite.scale.set(0.08, 0.08, 1);
+    sprite.scale.set(2, 2, 1);
     return sprite;
   }
 
@@ -626,11 +671,6 @@ class BowSystem3D {
             } else {
                 this.handleMouseUp(e);
             }
-        } else if (e.button === 2) { // Right click for shooting
-            if (this.isHeld) {
-                this.shoot();
-                this.isHeld = false;
-            }
         }
     };
 
@@ -649,30 +689,41 @@ class BowSystem3D {
         const dir = e.deltaY < 0 ? 1 : -1;
         this.cycleZoom(dir);
     };
+
+    // Right-click handler for scope toggle
+    this._onRightClick = (e) => {
+        e.preventDefault(); // Prevent default context menu
+        this.toggleScope();
+    };
     
     element.addEventListener('mousedown', (e) => {
         if(e.button === 0) this._onMouseDown(e);
     });
     element.addEventListener('mouseup', this._onMouseUp);
-    // Add contextmenu listener for right-click to toggle scope
-    element.addEventListener('contextmenu', (e) => {
-        e.preventDefault(); // Prevent default context menu
-        this.toggleScope();
-    });
+    // Right-click to toggle scope
+    element.addEventListener('contextmenu', this._onRightClick);
     element.addEventListener('wheel', this._onWheel, { passive: false });
     document.addEventListener('mousemove', this._onMouseMove);
 
     // --- Mobile Touch Controls (Split Screen) ---
     this.activeTouches = {}; 
     this.chargeStartY = 0;
+    this.touchStartTime = {};
 
     this._onTouchStart = (e) => {
         if (e.target.closest('button')) return;
         
         const width = element.clientWidth;
 
+        // Two-finger tap for scope toggle (mobile alternative to right-click)
+        if (e.touches.length === 2 && !this.isTracking) {
+            this.toggleScope();
+            return;
+        }
+
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
+            this.touchStartTime[touch.identifier] = Date.now();
             
             if (touch.clientX < width / 2) {
                 // LEFT SIDE: CHARGE OR FIRE
@@ -686,13 +737,17 @@ class BowSystem3D {
 
                 this.chargeStartY = touch.clientY;
                 
-                // Start Charging
+                // Start Charging (auto-exit scope on mobile when charging)
                 if (!this.isNocked) {
                    if (this.game.gameData.ammo <= 0) {
                        this.game.onNoAmmo();
                        return;
                    }
                    this.nock();
+                   // On mobile, auto-unscope when starting to charge
+                   if (this.isScoped && this.game.isMobile) {
+                       this.toggleScope();
+                   }
                 }
                 this.isDrawn = true;
                 this.drawStartTime = Date.now();
@@ -710,6 +765,9 @@ class BowSystem3D {
 
     this._onTouchMove = (e) => {
         e.preventDefault();
+        
+        // Prevent multi-touch interference
+        if (e.touches.length > 1) return;
         
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
@@ -734,7 +792,9 @@ class BowSystem3D {
                 const deltaX = touch.clientX - this.lastTouchX;
                 const deltaY = touch.clientY - this.lastTouchY;
                 
-                const sensitivity = this.isScoped ? 0.0005 : 0.0015;
+                // Mobile: reduce sensitivity when charging to prevent accidental scope toggle
+                const baseAimSensitivity = this.isScoped ? 0.0005 : 0.0015;
+                const sensitivity = this.isDrawn ? baseAimSensitivity * 0.5 : baseAimSensitivity;
                 this.rotationVelocity.x -= deltaX * sensitivity;
                 this.rotationVelocity.y -= deltaY * sensitivity;
 
@@ -748,18 +808,25 @@ class BowSystem3D {
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
             const type = this.activeTouches[touch.identifier];
+            const touchDuration = Date.now() - (this.touchStartTime[touch.identifier] || 0);
 
             if (type === 'charge') {
-                // RELEASE TO HOLD
+                // RELEASE TO HOLD (only if held long enough to charge)
                 if (this.drawPower > 0.2) {
                     this.isHeld = true;
+                } else if (touchDuration < 100) {
+                    // Quick tap = cancel
+                    this.cancel();
+                    this.isDrawn = false;
                 } else {
+                    // Long press but no charge = cancel
                     this.cancel();
                     this.isDrawn = false;
                 }
             }
             
             delete this.activeTouches[touch.identifier];
+            delete this.touchStartTime[touch.identifier];
         }
     };
 
@@ -773,6 +840,10 @@ class BowSystem3D {
         this.keys[e.code] = true;
         if (e.repeat) return;
         if (e.code === 'KeyR') this.nock();
+        if (e.code === 'KeyZ') {
+            e.preventDefault();
+            this.toggleScope();
+        }
         if (e.code === 'Space') {
             e.preventDefault();
             if (this.isHeld) {
@@ -836,25 +907,43 @@ class BowSystem3D {
   }
 
   toggleScope() {
-      if (this.isTracking) return;
+      if (this.isTracking) return; // Can't toggle scope while tracking an arrow
+      
       this.isScoped = !this.isScoped;
       const element = this.game.container;
+      const isMobile = this.game.isMobile;
 
       if (this.isScoped) {
+          // Enter scope mode
           this.game.audio.play('scope');
           this.game.haptics.trigger('scope_enter');
           this.scopeCrosshair.visible = true;
           this.targetZoom = this.zoomSteps[this.zoomIndex];
           
-          if (element.requestPointerLock) element.requestPointerLock();
+          // Request pointer lock ONLY on desktop (not mobile)
+          if (!isMobile && element.requestPointerLock) {
+              element.requestPointerLock().catch(() => {
+                  // Silently fail if pointer lock not available
+              });
+          }
+          
           if (this.game.onScopeEnter) this.game.onScopeEnter();
       } else {
+          // Exit scope mode
           this.scopeCrosshair.visible = false;
           this.targetZoom = 1;
           this.currentZoom = 1;
-          if (document.pointerLockElement === element) document.exitPointerLock();
+          
+          // Exit pointer lock ONLY on desktop
+          if (!isMobile && document.pointerLockElement === element) {
+              document.exitPointerLock().catch(() => {
+                  // Silently fail if not locked
+              });
+          }
+          
           if (this.game.onScopeExit) this.game.onScopeExit();
       }
+      
       this.applyZoom();
   }
 
@@ -1059,6 +1148,7 @@ class BowSystem3D {
       const element = this.game.container;
       element.removeEventListener('mousedown', this._onMouseDown);
       element.removeEventListener('mouseup', this._onMouseUp);
+      element.removeEventListener('contextmenu', this._onRightClick);
       element.removeEventListener('wheel', this._onWheel);
       element.removeEventListener('touchstart', this._onTouchStart);
       element.removeEventListener('touchend', this._onTouchEnd);
@@ -1514,6 +1604,7 @@ class HuntingGame3D {
 // --- React Component ---
 
 const BirdShooting = () => {
+  const isMobile = window.innerWidth < 768;
   const { socket } = useContext(AuthContext);
   const navigate = useNavigate();
   const [gameState, setGameState] = useState('lobby');
@@ -1692,61 +1783,72 @@ const BirdShooting = () => {
       socket.off('bird_shoot:extend_failed', handleExtendFailed);
       socket.off('error', handleError);
     };
-  }, [socket, dispatch]);
+    }, [socket, dispatch, autoRechargeEnabled]);
 
   useEffect(() => {
-      if (gameState === 'playing' && gameContainerRef.current && matchData) {
-          gameInstanceRef.current = new HuntingGame3D(
-            gameContainerRef.current, 
-            matchData,
-            handleScore,
-            (shotData) => {
-                if (socket && matchData) {
-                    socket.emit('bird_shoot:shoot', {
-                        gameId: matchData.id,
-                        shotData: {
-                            ...shotData,
-                            birdId: shotData.birdId, // Explicitly pass the ID
-                            // Keep dummy coords for fallback/debug
-                            x: shotData.x || 50, 
-                            y: shotData.y || 50 
+            if (gameState === 'playing' && gameContainerRef.current && matchData) {
+                    // Delay instantiation slightly to allow fullscreen transition/layout stabilization
+                    let startupTimer = setTimeout(() => {
+                        gameInstanceRef.current = new HuntingGame3D(
+                            gameContainerRef.current, 
+                            matchData,
+                            handleScore,
+                            (shotData) => {
+                                if (socket && matchData) {
+                                    socket.emit('bird_shoot:shoot', {
+                                        gameId: matchData.id,
+                                        shotData: {
+                                            ...shotData,
+                                            birdId: shotData.birdId, // Explicitly pass the ID
+                                            // Keep dummy coords for fallback/debug
+                                            x: shotData.x || 50, 
+                                            y: shotData.y || 50 
+                                        }
+                                    });
+                                }
+                            },
+                            () => {
+                                setHitMessage("OUT OF AMMO!");
+                                setTimeout(() => setHitMessage(null), 2000);
+                            }
+                        );
+                    }, 300);
+
+                    // Attach a short polling watcher to hook events once instance exists
+                    const watcher = setInterval(() => {
+                        if (gameInstanceRef.current) {
+                            gameInstanceRef.current.onScopeEnter = () => {
+                                setShowScopeUI(true);
+                                setIsScoped(true);
+                                setIsTracking(false);
+                            };
+                            gameInstanceRef.current.onScopeExit = () => {
+                                setShowScopeUI(false);
+                                setIsScoped(false);
+                                setIsTracking(false);
+                                setDrawPower(0);
+                            };
+                            gameInstanceRef.current.onShotFired = () => {
+                                setIsTracking(true);
+                                setIsScoped(true); 
+                            };
+                            gameInstanceRef.current.onDrawUpdate = (power) => setDrawPower(power);
+                            gameInstanceRef.current.onNock = (nocked) => setIsNocked(nocked);
+                            gameInstanceRef.current.onZoomChange = (z) => setZoomMultiplier(z);
+                            clearInterval(watcher);
                         }
-                    });
-                }
-            },
-            () => {
-                setHitMessage("OUT OF AMMO!");
-                setTimeout(() => setHitMessage(null), 2000);
+                    }, 50);
+
+                    return () => {
+                        clearTimeout(startupTimer);
+                        clearInterval(watcher);
+                        if (gameInstanceRef.current) {
+                            gameInstanceRef.current.dispose();
+                            gameInstanceRef.current = null;
+                        }
+                    };
             }
-          );
-
-          // Hook UI events
-          gameInstanceRef.current.onScopeEnter = () => {
-              setShowScopeUI(true);
-              setIsScoped(true);
-              setIsTracking(false);
-          };
-          gameInstanceRef.current.onScopeExit = () => {
-              setShowScopeUI(false);
-              setIsScoped(false);
-              setIsTracking(false);
-              setDrawPower(0);
-          };
-          gameInstanceRef.current.onShotFired = () => {
-              setIsTracking(true);
-              setIsScoped(true); 
-          };
-          gameInstanceRef.current.onDrawUpdate = (power) => setDrawPower(power);
-          gameInstanceRef.current.onNock = (nocked) => setIsNocked(nocked);
-          gameInstanceRef.current.onZoomChange = (z) => setZoomMultiplier(z);
-
-          return () => {
-              if (gameInstanceRef.current) {
-                  gameInstanceRef.current.dispose();
-              }
-          };
-      }
-  }, [gameState]);
+    }, [gameState, matchData, socket]);
 
   useEffect(() => {
       let interval;
@@ -1792,690 +1894,756 @@ const BirdShooting = () => {
       }
   };
 
-  const startNewMatch = () => {
-      if (!socket) return;
-      
-      // Force Fullscreen for gameplay immersion
-      // Use document.body to ensure the fixed overlay (HUD) is included
+  const startNewMatch = async () => {
+      if (!socket) {
+          setError('Connecting to game server... please wait.');
+          return;
+      }
+
+      // Ensure user profile / wallet present before joining
+      if (!user) {
+          setLoading(true);
+          try {
+              await dispatch(fetchUserProfile()).unwrap();
+          } catch (err) {
+              setLoading(false);
+              setError('Failed to load profile. Please refresh and try again.');
+              return;
+          }
+      }
+
+      // Force Fullscreen for gameplay immersion (user gesture)
       const elem = document.body;
       if (elem.requestFullscreen) {
           elem.requestFullscreen().catch(err => {
-              console.warn("Fullscreen request failed", err);
+              // non-fatal; proceed anyway
+              console.warn('Fullscreen request failed', err);
           });
-      } else if (elem.webkitRequestFullscreen) {
-          elem.webkitRequestFullscreen();
-      }
-
-      setLoading(true);
-      setCurrentScore(0);
-      socket.emit('bird_shoot:join', { level: selectedLevel });
-  };
-
-  // Maintain Fullscreen Logic
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-        if (!document.fullscreenElement && gameState === 'playing') {
-            // User tried to exit fullscreen while playing, try to re-enter if possible
-            // Note: Most browsers require a user gesture, so this might not always work 
-            // without another click, but we can try to prompt or handle it.
-            console.log("Exited fullscreen during gameplay");
-        }
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, [gameState]);
-
-  const handleShoot = () => {
-      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
-          gameInstanceRef.current.isFiringClick = true;
-          gameInstanceRef.current.bowSystem.shoot();
-          setTimeout(() => {
-              if (gameInstanceRef.current) gameInstanceRef.current.isFiringClick = false;
-          }, 100);
-      }
-  };
-
-  const handleCancel = () => {
-      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
-          gameInstanceRef.current.bowSystem.cancel();
-      }
-  };
-
-  const handleLoad = () => {
-      if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
-          gameInstanceRef.current.bowSystem.nock();
-      }
-  };
-
-  const handleToggleScope = () => {
-      if (gameInstanceRef.current?.bowSystem) {
-          gameInstanceRef.current.bowSystem.toggleScope();
-      }
-  };
-
-  const handleSetZoomIndex = (idx) => {
-      if (gameInstanceRef.current?.bowSystem) {
-          gameInstanceRef.current.bowSystem.setZoomIndex(idx);
-      }
-  };
-
-  const handleSkip = () => {
-      if (gameInstanceRef.current) {
-          gameInstanceRef.current.skipShot();
-          setIsTracking(false);
-          setIsScoped(false);
-          setShowScopeUI(false);
-      }
-  };
-
-  const handleJoystickMove = (delta) => {
-      if (gameInstanceRef.current) {
-          gameInstanceRef.current.aimVector.set(delta.x, delta.y);
-      }
-  };
-
-  // Component Keyboard shortcuts
-  useEffect(() => {
-      const handleGlobalKeyDown = (e) => {
-          if (gameState !== 'playing') return;
-          if (e.code === 'Space') {
-              // Logic is handled in class, but we can sync React state if needed
-          }
-          if (e.code === 'Escape') {
-              handleCancel();
-          }
+            } else if (elem.webkitRequestFullscreen) {
+                try { elem.webkitRequestFullscreen(); } catch(e) { console.warn(e) }
+            }
+      
+            setLoading(true);
+            setCurrentScore(0);
+      
+            // Ensure socket is connected before emitting join. If not, wait with a timeout.
+            if (socket.connected) {
+                socket.emit('bird_shoot:join', { level: selectedLevel });
+            } else {
+                let handled = false;
+                const onConnect = () => {
+                    if (handled) return;
+                    handled = true;
+                    socket.emit('bird_shoot:join', { level: selectedLevel });
+                };
+      
+                socket.once('connect', onConnect);
+      
+                // Failsafe timeout
+                const t = setTimeout(() => {
+                    if (!handled) {
+                        handled = true;
+                        socket.off('connect', onConnect);
+                        setLoading(false);
+                        setError('Connection timed out. Please check your network and try again.');
+                    }
+                }, 8000);
+      
+                // Clear timeout when session starts (session listener will set loading=false)
+                const cleanupOnSession = (data) => {
+                    clearTimeout(t);
+                    socket.off('bird_shoot:session', cleanupOnSession);
+                };
+                socket.on('bird_shoot:session', cleanupOnSession);
+            }
+        };
+      
+        // Maintain Fullscreen Logic
+        useEffect(() => {
+          const handleFullscreenChange = () => {
+              if (!document.fullscreenElement && gameState === 'playing') {
+                  // User tried to exit fullscreen while playing, try to re-enter if possible
+                  // Note: Most browsers require a user gesture, so this might not always work 
+                  // without another click, but we can try to prompt or handle it.
+                  console.log("Exited fullscreen during gameplay");
+              }
+          };
+      
+          document.addEventListener('fullscreenchange', handleFullscreenChange);
+          return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        }, [gameState]);
+      
+        const handleShoot = () => {
+            if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
+                gameInstanceRef.current.isFiringClick = true;
+                gameInstanceRef.current.bowSystem.shoot();
+                setTimeout(() => {
+                    if (gameInstanceRef.current) gameInstanceRef.current.isFiringClick = false;
+                }, 100);
+            }
+        };
+      
+        const handleCancel = () => {
+            if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
+                gameInstanceRef.current.bowSystem.cancel();
+            }
+        };
+      
+        const handleLoad = () => {
+            if (gameInstanceRef.current && gameInstanceRef.current.bowSystem) {
+                gameInstanceRef.current.bowSystem.nock();
+            }
+        };
+      
+        const handleToggleScope = () => {
+            if (gameInstanceRef.current?.bowSystem) {
+                gameInstanceRef.current.bowSystem.toggleScope();
+            }
+        };
+      
+        const handleSetZoomIndex = (idx) => {
+            if (gameInstanceRef.current?.bowSystem) {
+                gameInstanceRef.current.bowSystem.setZoomIndex(idx);
+            }
+        };
+      
+        const handleSkip = () => {
+            if (gameInstanceRef.current) {
+                gameInstanceRef.current.skipShot();
+                setIsTracking(false);
+                setIsScoped(false);
+                setShowScopeUI(false);
+            }
+        };
+      
+        const handleJoystickMove = (delta) => {
+            if (gameInstanceRef.current) {
+                gameInstanceRef.current.aimVector.set(delta.x, delta.y);
+            }
+        };
+      
+        // Component Keyboard shortcuts
+        useEffect(() => {
+            const handleGlobalKeyDown = (e) => {
+                if (gameState !== 'playing') return;
+                if (e.code === 'Space') {
+                    // Logic is handled in class, but we can sync React state if needed
+                }
+                if (e.code === 'Escape') {
+                    handleCancel();
+                }
+            };
+            window.addEventListener('keydown', handleGlobalKeyDown);
+            return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+        }, [gameState]);
+      
+        return (
+          <div className="min-h-screen bg-[#0d1117] text-white p-4 font-sans select-none relative">
+            <style>{`
+              @media (max-width: 768px) {
+                .game-hud { font-size: 0.7rem; gap: 0.5rem !important; padding: 0.5rem !important; }
+                .hud-item { padding: 0.5rem !important; border-radius: 1rem !important; min-width: 60px; }
+                .hud-value { font-size: 1.25rem !important; line-height: 1 !important; }
+                .hud-label { font-size: 7px !important; }
+                .zoom-bar { scale: 0.75; right: 0.5rem !important; }
+                .action-buttons { bottom: 1.5rem !important; left: 1rem !important; gap: 1rem !important; }
+                .scope-btn { width: 3.5rem !important; height: 3.5rem !important; font-size: 8px !important; }
+                .joystick-container { scale: 0.8; transform-origin: bottom left; }
+                .extract-btn { padding: 0.5rem 1rem !important; font-size: 8px !important; }
+              }
+            `}</style>
+            {/* Top Navigation Overlay */}
+            {gameState !== 'playing' && (
+              <div className="absolute top-6 left-0 right-0 flex justify-center z-[60]">
+                  <div className="flex bg-[#0f212e]/80 backdrop-blur-xl border border-gray-800 p-2 rounded-2xl gap-2 shadow-2xl">
+                      <button onClick={() => navigate('/')} className="flex items-center gap-2 px-6 py-3 rounded-xl hover:bg-[#3bc117]/10 transition-all group">
+                          <Home className="w-4 h-4 text-gray-400 group-hover:text-[#3bc117]" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-white">Home</span>
+                      </button>
+                      <button onClick={() => navigate('/store')} className="flex items-center gap-2 px-6 py-3 rounded-xl hover:bg-[#3bc117]/10 transition-all group">
+                          <ShoppingBag className="w-4 h-4 text-gray-400 group-hover:text-[#3bc117]" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-white">Armory</span>
+                      </button>
+                      <button onClick={() => navigate('/profile')} className="flex items-center gap-2 px-6 py-3 rounded-xl hover:bg-[#3bc117]/10 transition-all group">
+                          <UserIcon className="w-4 h-4 text-gray-400 group-hover:text-[#3bc117]" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-white">Profile</span>
+                      </button>
+                  </div>
+              </div>
+            )}
+      
+            <div className="max-w-6xl mx-auto pt-20">
+              
+              {/* Lobby State */}
+              {gameState === 'lobby' && (
+                <div className="flex flex-col items-center justify-center py-6 md:py-12">
+                  <motion.div initial={{opacity:0}} animate={{opacity:1}} className="text-center space-y-8">
+                      <div className="relative inline-block">
+                          <div className="w-24 h-24 bg-[#3bc117]/10 rounded-full flex items-center justify-center mx-auto border border-[#3bc117]/50 shadow-[0_0_50px_rgba(59,193,23,0.3)]">
+                              <Target className="w-12 h-12 text-[#3bc117]" />
+                          </div>
+                      </div>
+      
+                      <div>
+                          <h1 className="text-4xl md:text-6xl font-black italic tracking-tighter uppercase">GameX <span className="text-[#3bc117]">Sniper 3D</span></h1>
+                          <p className="text-gray-400 font-bold tracking-[0.3em] text-[10px] md:text-xs mt-2 uppercase">Elite Archery Arena</p>
+                      </div>
+      
+                      {/* Level Selection */}
+                      <div className="flex flex-col items-center gap-4">
+                          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Select Arena Scene</p>
+                          <div className="flex gap-2 p-2 bg-[#1a2c38] rounded-2xl border border-gray-800">
+                              {[1, 2, 3, 4].map(lvl => (
+                                  <button
+                                      key={lvl}
+                                      onClick={() => setSelectedLevel(lvl)}
+                                      className={`w-12 h-12 rounded-xl font-black transition-all ${selectedLevel === lvl ? 'bg-[#3bc117] text-black shadow-[0_0_20px_rgba(59,193,23,0.4)] scale-110' : 'bg-black/40 text-gray-400 hover:text-white'}`}
+                                  >
+                                      {lvl}
+                                  </button>
+                              ))}
+                          </div>
+                          <p className="text-[8px] font-black text-[#3bc117] uppercase italic">
+                              {selectedLevel === 1 && "Meadow Fields"}
+                              {selectedLevel === 2 && "Foggy Hills"}
+                              {selectedLevel === 3 && "Midnight Hunt"}
+                              {selectedLevel === 4 && "Rainbow Valley"}
+                          </p>
+                      </div>
+      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl mx-auto">
+                          {/* Detailed Wallet Display */}
+                          <div className="bg-[#1a2c38] border border-gray-800 rounded-3xl p-6 text-left shadow-2xl">
+                              <div className="flex items-center justify-between mb-6">
+                                  <div className="flex items-center gap-3">
+                                      <Coins className="w-6 h-6 text-[#3bc117]" />
+                                      <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 font-sans">Elite Wallet</h3>
+                                  </div>
+                                  <Link to="/wallet" className="text-[10px] font-black text-[#3bc117] hover:underline uppercase tracking-wider">Deposit</Link>
+                              </div>
+                              
+                              <div className="space-y-4">
+                                  <div className="flex justify-between items-center p-4 bg-black/30 rounded-2xl border border-white/5">
+                                      <div>
+                                          <p className="text-[8px] font-black text-gray-500 uppercase tracking-tighter mb-1">Available Balance</p>
+                                          <p className="text-2xl font-black text-white">{wallet.mainBalance.toFixed(2)} <span className="text-xs text-[#3bc117]">TRX</span></p>
+                                      </div>
+                                      <Trophy className="w-8 h-8 text-[#3bc117]/20" />
+                                  </div>
+      
+                                  <div className="grid grid-cols-2 gap-3">
+                                      <div className="p-3 bg-black/20 rounded-xl border border-white/5">
+                                          <p className="text-[8px] font-black text-gray-500 uppercase mb-1">Winnings</p>
+                                          <p className="text-sm font-black text-[#3bc117]">{wallet.totalWon.toFixed(1)}</p>
+                                      </div>
+                                      <div className="p-3 bg-black/20 rounded-xl border border-white/5">
+                                          <p className="text-[8px] font-black text-gray-500 uppercase mb-1">Spent</p>
+                                          <p className="text-sm font-black text-red-500">{wallet.totalSpent.toFixed(1)}</p>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+      
+                          {/* Arsenal & Refill */}
+                          <div className="bg-[#1a2c38] border border-gray-800 rounded-3xl p-6 text-left shadow-2xl">
+                              <div className="flex items-center gap-3 mb-6">
+                                  <Zap className="w-6 h-6 text-orange-500" />
+                                  <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 font-sans">Current Ammo</h3>
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-4 mb-6">
+                                  {['arrow', 'pellet'].map(type => {
+                                      const count = inventory.items?.find(i => i.itemKey === type)?.amount || 0;
+                                      return (
+                                          <div key={type} className="bg-black/30 p-4 rounded-2xl border border-white/5 text-center relative overflow-hidden group">
+                                              <div className="absolute top-0 right-0 p-1">
+                                                  <div className={`w-1.5 h-1.5 rounded-full ${count > 0 ? 'bg-[#3bc117] animate-pulse' : 'bg-red-500'}`}></div>
+                                              </div>
+                                              <p className="text-[10px] font-black text-gray-500 uppercase mb-1 font-sans">{type}s</p>
+                                              <p className="text-2xl font-black text-white">{count}</p>
+                                          </div>
+                                      );
+                                  })}
+                              </div>
+      
+                              <div className="grid grid-cols-2 gap-3">
+                                  <button 
+                                      onClick={() => handleBuyAmmo('arrow')}
+                                      disabled={buyingAmmo || wallet.mainBalance < 5}
+                                      className="relative py-4 bg-[#3bc117]/10 hover:bg-[#3bc117]/20 border border-[#3bc117]/20 rounded-2xl transition-all group overflow-hidden"
+                                  >
+                                      <div className="relative z-10 text-center">
+                                          <p className="text-[8px] font-black text-[#3bc117] uppercase mb-1 font-sans">Add 50x Arrows</p>
+                                          <p className="text-xs font-black text-white">5 TRX</p>
+                                      </div>
+                                      <motion.div className="absolute inset-0 bg-[#3bc117]/5 -translate-x-full group-hover:translate-x-0 transition-transform duration-500" />
+                                  </button>
+                                  <button 
+                                      onClick={() => handleBuyAmmo('pellet')}
+                                      disabled={buyingAmmo || wallet.mainBalance < 5}
+                                      className="relative py-4 bg-[#3bc117]/10 hover:bg-[#3bc117]/20 border border-[#3bc117]/20 rounded-2xl transition-all group overflow-hidden"
+                                  >
+                                      <div className="relative z-10 text-center">
+                                          <p className="text-[8px] font-black text-[#3bc117] uppercase mb-1 font-sans">Add 100x Pellets</p>
+                                          <p className="text-xs font-black text-white">5 TRX</p>
+                                      </div>
+                                      <motion.div className="absolute inset-0 bg-[#3bc117]/5 -translate-x-full group-hover:translate-x-0 transition-transform duration-500" />
+                                  </button>
+                              </div>
+                          </div>
+                      </div>
+      
+                      <AnimatePresence>
+                          {purchaseSuccess && (
+                              <motion.div 
+                                  initial={{ opacity: 0, y: 20, scale: 0.8 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 1.1 }}
+                                  className="flex items-center justify-center gap-2 text-[#3bc117] font-black uppercase text-xs tracking-widest bg-[#3bc117]/10 p-4 rounded-2xl border border-[#3bc117]/30 shadow-[0_0_30px_rgba(59,193,23,0.2)] max-w-sm mx-auto"
+                              >
+                                  <ShieldCheck className="w-5 h-5" /> {purchaseSuccess}
+                              </motion.div>
+                          )}
+                      </AnimatePresence>
+      
+                      <button 
+                          onClick={startNewMatch}
+                          disabled={loading || !socket}
+                          className="bg-[#3bc117] hover:bg-[#32a814] text-black text-lg md:text-xl font-black py-4 px-10 md:py-6 md:px-16 rounded-full transition-all hover:scale-105 shadow-[0_0_30px_rgba(59,193,23,0.4)]"
+                      >
+                          {loading ? 'INITIALIZING...' : 'ENTER HUNT'}
+                      </button>
+      
+                      {!socket && !loading && (
+                          <div className="text-xs text-yellow-300 font-bold mt-2">Connecting to game server...</div>
+                      )}
+      
+                      {error && (
+                          <div className="flex items-center justify-center gap-2 text-red-500 font-black uppercase text-[10px] tracking-widest bg-red-500/10 p-4 rounded-2xl border border-red-500/20">
+                              <AlertCircle className="w-4 h-4" /> {error}
+                          </div>
+                      )}
+                  </motion.div>
+                </div>
+              )}
+      
+              {/* Playing State */}
+              {gameState === 'playing' && (
+                <div className="fixed inset-0 z-[100] bg-black">
+                  {/* HUD */}
+                  <div className="absolute top-4 left-2 right-2 flex justify-between items-start z-40 pointer-events-none game-hud">
+                      <div className="flex gap-1.5 md:gap-4">
+                          <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
+                              <p className="text-[6px] md:text-[9px] text-gray-400 font-black uppercase hud-label tracking-tighter">Points</p>
+                              <p className="text-sm md:text-4xl font-black text-[#3bc117] hud-value leading-none">{currentScore}</p>
+                          </div>
+                          <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
+                              <p className="text-[6px] md:text-[9px] text-gray-400 font-black uppercase hud-label tracking-tighter">Arrows</p>
+                              <p className="text-sm md:text-4xl font-black text-white hud-value leading-none">{remainingAmmo}</p>
+                          </div>
+                          <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center min-w-[80px] md:min-w-[120px] relative overflow-hidden">
+                              {(showReload || isSessionExpired) ? (
+                                  <button 
+                                      onClick={handleReload}
+                                      className="w-full h-full absolute inset-0 bg-red-600/80 hover:bg-red-500 flex flex-col items-center justify-center z-20 animate-pulse transition-colors"
+                                  >
+                                      <RotateCw className="w-4 h-4 md:w-6 md:h-6 text-white mb-1" />
+                                      <span className="text-[8px] md:text-[10px] font-black uppercase text-white tracking-widest">EXTEND</span>
+                                      <span className="text-[6px] md:text-[8px] font-bold text-white/80">0.1 TRX</span>
+                                  </button>
+                              ) : (
+                                  <>
+                                      {/* Analog Clock Background Effect */}
+                                      <div className="absolute inset-0 opacity-10">
+                                          <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 100 100">
+                                              <circle
+                                                  cx="50" cy="50" r="45"
+                                                  fill="none"
+                                                  stroke="#3bc117"
+                                                  strokeWidth="10"
+                                                  strokeDasharray="282.7"
+                                                  strokeDashoffset={(() => {
+                                                      if (!nextChargeTime) return 0;
+                                                      const now = Date.now();
+                                                      const total = currentIntervalMinutes * 60000;
+                                                      const remaining = Math.max(0, nextChargeTime - now);
+                                                      return 282.7 * (1 - remaining / total);
+                                                  })()}
+                                              />
+                                          </svg>
+                                      </div>
+                                      
+                                      <p className="text-[6px] md:text-[9px] text-orange-500 font-black uppercase hud-label tracking-tighter flex items-center gap-1 z-10">
+                                          <Clock className="w-2 h-2 md:w-3 md:h-3 animate-pulse" />
+                                          Session {autoRechargeEnabled && <span className="text-[#3bc117] ml-1">(AUTO)</span>}
+                                      </p>
+                                      <p className="text-sm md:text-4xl font-black text-white hud-value leading-none font-mono z-10">
+                                          {timeLeftStr}
+                                      </p>
+                                  </>
+                              )}
+                          </div>
+                          <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
+                              <p className="text-[6px] md:text-[9px] text-yellow-500 font-black uppercase hud-label tracking-tighter">Zoom</p>
+                              <p className="text-xs md:text-2xl font-black text-white hud-value leading-none">{Math.round(zoomMultiplier)}x</p>
+                          </div>
+                          {/* Scope Status Indicator */}
+                          <div className={`bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border transition-all hud-item shadow-2xl flex flex-col items-center justify-center ${isScoped ? 'border-[#3bc117] bg-[#3bc117]/10' : 'border-white/10'}`}>
+                              <p className="text-[6px] md:text-[9px] font-black uppercase hud-label tracking-tighter mb-1" style={{color: isScoped ? '#3bc117' : '#999'}}>
+                                  {isScoped ? 'SCOPED' : 'Scope'}
+                              </p>
+                              {isMobile ? (
+                                  <>
+                                      <p className="text-[8px] md:text-xs font-black text-gray-300">2-Finger Tap</p>
+                                      {!isScoped && <p className="text-[7px] text-gray-500 mt-0.5 text-center">Toggle Scope</p>}
+                                  </>
+                              ) : (
+                                  <>
+                                      <p className="text-[10px] md:text-xs font-black text-gray-300">RClick</p>
+                                      {!isScoped && <p className="text-[8px] text-gray-500 mt-0.5">Z / RMB</p>}
+                                  </>
+                              )}
+                          </div>
+                      </div>
+      
+                      <div className="flex flex-col items-end gap-4 pointer-events-auto">
+                          <div className="flex gap-2 items-center">
+                              {isTracking && (
+                                  <button 
+                                      onClick={handleSkip}
+                                      className="bg-[#3bc117] text-black px-4 py-1.5 md:px-6 md:py-3 rounded-lg md:rounded-xl font-black text-[8px] md:text-xs uppercase tracking-[0.2em] shadow-[0_0_20px_rgba(59,193,23,0.4)] hover:scale-105 active:scale-95 transition-all"
+                                  >
+                                      Skip
+                                  </button>
+                              )}
+                              <button 
+                                  onClick={() => handleEndGame()}
+                                  className="bg-red-500/20 hover:bg-red-500/40 text-red-500 px-3 py-1.5 md:p-3 rounded-lg md:rounded-xl border border-red-500/30 backdrop-blur-md font-black text-[8px] md:text-xs uppercase tracking-widest shadow-lg extract-btn"
+                              >
+                                  Extract
+                              </button>
+                          </div>
+      
+                          {/* Vertical Zoom Bar (Below Extract) */}
+                          <AnimatePresence>
+                              {isScoped && (
+                                  <motion.div 
+                                      initial={{ opacity: 0, y: -20 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      exit={{ opacity: 0, y: -20 }}
+                                      className="flex flex-col items-center gap-2 z-30 zoom-bar"
+                                  >
+                                      <div className="bg-black/40 backdrop-blur-md border border-white/10 p-1.5 rounded-xl flex flex-col gap-2 shadow-2xl">
+                                          {[8, 6, 4, 2].map((z, i) => (
+                                              <button
+                                                  key={z}
+                                                  onClick={() => handleSetZoomIndex(3-i)}
+                                                  className={`w-10 h-10 md:w-12 md:h-12 rounded-lg font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black' : 'bg-black/60 text-gray-400 hover:text-white'}`}
+                                              >
+                                                  {z}x
+                                              </button>
+                                          ))}
+                                      </div>
+                                  </motion.div>
+                              )}
+                          </AnimatePresence>
+                      </div>
+                  </div>
+      
+                  {/* Pro 2D Crosshair (Always Visible when not Scoped) */}
+                  {!isScoped && (
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-40 scale-75 md:scale-100">
+                          <div className="relative flex items-center justify-center">
+                               {/* Circle */}
+                               <div className="w-10 h-10 border border-black/30 rounded-full"></div>
+                               {/* Cross lines */}
+                               <div className="w-[1px] h-6 bg-black absolute opacity-80"></div>
+                               <div className="w-6 h-[1px] bg-black absolute opacity-80"></div>
+                               {/* Center Dot */}
+                               <div className="w-1 h-1 bg-black rounded-full shadow-[0_0_5px_rgba(0,0,0,0.5)]"></div>
+                          </div>
+                      </div>
+                  )}
+      
+                  {/* Hit Confirmation Message */}
+                  <AnimatePresence>
+                      {hitMessage && (
+                          <motion.div 
+                              initial={{ opacity: 0, scale: 0.5, y: -20 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 1.2 }}
+                              className="absolute top-1/3 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+                          >
+                              <div className="bg-[#3bc117] text-black px-8 py-3 rounded-full font-black italic text-xl shadow-[0_0_50px_rgba(59,193,23,0.5)] uppercase tracking-tighter">
+                                  {hitMessage}
+                              </div>
+                          </motion.div>
+                      )}
+                  </AnimatePresence>
+      
+                  {/* Vertical Charge Meter (Left) */}
+                  <AnimatePresence>
+                      {drawPower > 0 && (
+                          <motion.div 
+                              initial={{ opacity: 0, x: -50 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              exit={{ opacity: 0, x: -50 }}
+                              className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
+                          >
+                              <div className="h-60 md:h-80 w-4 md:w-6 bg-black/60 rounded-full border border-white/20 p-1 relative overflow-hidden backdrop-blur-md shadow-2xl">
+                                  <motion.div 
+                                      className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-red-600 via-yellow-500 to-green-400 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
+                                      style={{ height: `${drawPower * 100}%` }}
+                                      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                                  />
+                                  {drawPower > 0.95 && (
+                                      <motion.div 
+                                          animate={{ opacity: [0.2, 0.8, 0.2] }}
+                                          transition={{ repeat: Infinity, duration: 0.2 }}
+                                          className="absolute inset-0 bg-white"
+                                      />
+                                  )}
+                              </div>
+                              <div className="text-center">
+                                  <p className="text-[8px] md:text-[10px] font-black text-white uppercase tracking-widest">Tension</p>
+                                  <p className={`text-xl md:text-2xl font-black italic tracking-tighter ${drawPower > 0.9 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                                      {Math.round(drawPower * 100)}%
+                                  </p>
+                              </div>
+                          </motion.div>
+                      )}
+                  </AnimatePresence>
+      
+                  {/* Controls Overlay (Bottom Right) */}
+                  <div className="absolute bottom-6 right-6 md:bottom-10 md:right-10 z-[60] pointer-events-auto flex items-center gap-4 action-buttons">
+                      {/* Inventory Toggle (Symbol Only) */}
+                      <button 
+                          onClick={() => setIsInventoryOpen(!isInventoryOpen)}
+                          className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-black/20 backdrop-blur-md border border-white/10 flex items-center justify-center shadow-2xl hover:bg-white/10 transition-all active:scale-90"
+                      >
+                          <ShoppingBag className="w-6 h-6 md:w-8 md:h-8 text-[#3bc117]" />
+                      </button>
+      
+                      {/* Scope Toggle (Transparent Styled) */}
+                      {!isTracking && (
+                          <button 
+                              onClick={handleToggleScope}
+                              className={`w-14 h-14 md:w-20 md:h-20 rounded-full border-2 backdrop-blur-sm shadow-2xl flex items-center justify-center font-black text-[8px] md:text-[10px] uppercase tracking-widest transition-all scope-btn ${isScoped ? 'bg-[#3bc117]/20 border-[#3bc117] text-[#3bc117]' : 'bg-white/5 border-white/20 text-white'}`}
+                          >
+                              {isScoped ? 'Unscope' : 'Scope'}
+                          </button>
+                      )}
+                  </div>
+      
+                  {/* Inventory Drawer */}
+                  <AnimatePresence>
+                      {isInventoryOpen && (
+                          <motion.div 
+                              initial={{ opacity: 0, y: 100 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 100 }}
+                              className="fixed bottom-24 right-6 md:bottom-32 md:right-10 z-[70] w-72 md:w-96"
+                          >
+                              <div className="bg-[#0f212e]/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-6 shadow-2xl">
+                                  <div className="grid grid-cols-2 gap-4">
+                                      {['arrow', 'pellet'].map(type => {
+                                          const amount = inventory.items?.find(i => i.itemKey === type)?.amount || 0;
+                                          return (
+                                              <div key={type} className="bg-black/40 border border-gray-800 p-3 rounded-2xl flex flex-col items-center gap-1">
+                                                  <Zap className={`w-4 h-4 ${type === 'arrow' ? 'text-yellow-500' : 'text-orange-500'}`} />
+                                                  <p className="text-[8px] font-black text-gray-500 uppercase">{type}s</p>
+                                                  <p className="text-sm font-black text-white">{amount}</p>
+                                              </div>
+                                          );
+                                      })}
+                                      <div className="bg-black/40 border border-[#3bc117]/30 p-3 rounded-2xl flex flex-col items-center gap-1 col-span-2">
+                                          <Coins className="w-4 h-4 text-[#3bc117]" />
+                                          <p className="text-[8px] font-black text-gray-500 uppercase">Balance</p>
+                                          <p className="text-sm font-black text-[#3bc117]">{wallet.mainBalance.toFixed(2)} TRX</p>
+                                      </div>
+                                  </div>
+                              </div>
+                          </motion.div>
+                      )}
+                  </AnimatePresence>
+      
+                  {/* Scope UI Overlay (ENHANCED) */}
+                  <AnimatePresence>
+                  {showScopeUI && (
+                      <motion.div 
+                          initial={{opacity: 0}} 
+                          animate={{opacity: 1}} 
+                          exit={{opacity: 0}}
+                          className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center"
+                      >
+                           {/* Scope Crosshair Mask - Thinner Borders for better visibility */}
+                          <div className="w-full h-full border-[12vw] md:border-[10vw] border-black rounded-full absolute inset-0 mix-blend-multiply"></div>
+                          
+                          {/* Pro Scoped Reticle (2D) */}
+                          <div className="relative flex items-center justify-center pointer-events-none scale-[1.2] md:scale-[1.5]">
+                              {/* Outer Thick Ring */}
+                              <div className="w-[40vh] h-[40vh] border-[6px] border-[#3bc117] rounded-full shadow-[0_0_20px_rgba(59,193,23,0.5)]"></div>
+                              {/* Middle Tech Ring */}
+                              <div className="absolute w-[35vh] h-[35vh] border-[2px] border-[#3bc117]/40 rounded-full border-dashed animate-[spin_20s_linear_infinite]"></div>
+                              {/* Inner Ring */}
+                              <div className="absolute w-[15vh] h-[15vh] border-[4px] border-[#3bc117]/80 rounded-full"></div>
+                              
+                              {/* Main Thick Cross */}
+                              <div className="absolute w-[45vh] h-[2px] bg-[#3bc117] shadow-[0_0_10px_rgba(59,193,23,0.5)]"></div>
+                              <div className="absolute h-[45vh] w-[2px] bg-[#3bc117] shadow-[0_0_10px_rgba(59,193,23,0.5)]"></div>
+                              
+                              {/* Corner Accents */}
+                              <div className="absolute top-[-2vh] left-[-2vh] w-4 h-4 border-t-4 border-l-4 border-[#3bc117]"></div>
+                              <div className="absolute top-[-2vh] right-[-2vh] w-4 h-4 border-t-4 border-r-4 border-[#3bc117]"></div>
+                              <div className="absolute bottom-[-2vh] left-[-2vh] w-4 h-4 border-b-4 border-l-4 border-[#3bc117]"></div>
+                              <div className="absolute bottom-[-2vh] right-[-2vh] w-4 h-4 border-b-4 border-r-4 border-[#3bc117]"></div>
+      
+                              {/* Center Dot */}
+                              <div className="absolute w-2 h-2 bg-red-500 rounded-full shadow-[0_0_15px_red]"></div>
+                          </div>
+      
+                          {/* Exit Button Only in Scoped UI */}
+                          <div className="absolute bottom-6 right-20 md:bottom-10 md:right-32 z-[80] pointer-events-auto">
+                              <button 
+                                  onClick={handleToggleScope}
+                                  className="w-14 h-14 md:w-20 md:h-20 bg-red-500/20 backdrop-blur-md border-2 border-red-500/50 rounded-full flex items-center justify-center font-black text-[8px] md:text-[10px] text-red-500 active:scale-90 transition-all shadow-2xl"
+                              >
+                                  EXIT
+                              </button>
+                          </div>
+                      </motion.div>
+                  )}
+                  </AnimatePresence>
+                  
+                  {/* Optimized Loading Overlay */}
+                  <AnimatePresence>
+                      {loading && (
+                          <motion.div 
+                              initial={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              className="fixed inset-0 z-[200] bg-[#0d1117] flex flex-col items-center justify-center"
+                          >
+                              <div className="w-64 h-1 bg-gray-800 rounded-full overflow-hidden mb-4">
+                                  <motion.div 
+                                      className="h-full bg-[#3bc117]"
+                                      initial={{ width: "0%" }}
+                                      animate={{ width: "100%" }}
+                                      transition={{ duration: 2, ease: "easeInOut" }}
+                                  />
+                              </div>
+                              <p className="text-[#3bc117] font-black text-[10px] tracking-[0.3em] animate-pulse">OPTIMIZING ASSETS...</p>
+                          </motion.div>
+                      )}
+                  </AnimatePresence>
+      
+                  {/* Game Container */}
+                  <div 
+                      ref={gameContainerRef} 
+                      className="w-screen h-screen bg-black overflow-hidden shadow-2xl relative cursor-crosshair touch-none"
+                  >
+                      {/* Instruction Overlay */}
+                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-[10px] font-black pointer-events-none text-center uppercase tracking-widest bg-black/20 px-6 py-2 rounded-full backdrop-blur-sm">
+                          DRAG LEFT TO DRAW • RELEASE TO HOLD • DRAG RIGHT TO AIM • TAP LEFT TO SHOOT
+                      </div>
+                  </div>
+      
+                  {/* Auto-Recharge / Extension Modal */}
+                  <AnimatePresence>
+                      {showAutoRechargeModal && (
+                          <motion.div 
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              exit={{ opacity: 0 }}
+                              className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+                          >
+                              <motion.div 
+                                  initial={{ scale: 0.9, y: 20 }}
+                                  animate={{ scale: 1, y: 0 }}
+                                  className="bg-[#1a2c38] border-2 border-[#3bc117] p-8 rounded-[2rem] text-center max-w-sm w-full shadow-2xl"
+                              >
+                                  <Clock className="w-12 h-12 text-[#3bc117] mx-auto mb-4" />
+                                  <h3 className="text-2xl font-black uppercase tracking-tighter text-white mb-2">Session Expired</h3>
+                                  <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-6 leading-relaxed">
+                                      Extend your hunt for <span className="text-[#3bc117]">0.1 TRX</span>?<br/>
+                                      <span className="text-[10px] text-orange-500 italic">Next interval: {currentIntervalMinutes + 1} minutes</span>
+                                  </p>
+      
+                                  <div className="space-y-4">
+                                      <button 
+                                          onClick={() => handleConfirmExtension(true)}
+                                          className="w-full py-4 bg-[#3bc117] hover:bg-[#45d61d] text-black font-black rounded-xl uppercase tracking-widest transition-all shadow-lg active:scale-95 text-xs"
+                                      >
+                                          Enable Auto-Recharge
+                                      </button>
+                                      <button 
+                                          onClick={() => handleConfirmExtension(false)}
+                                          className="w-full py-4 bg-white/5 hover:bg-white/10 text-white font-black rounded-xl uppercase tracking-widest transition-all border border-white/10 active:scale-95 text-[10px]"
+                                      >
+                                          One-Time Extend
+                                      </button>
+                                      <button 
+                                          onClick={() => handleEndGame()}
+                                          className="w-full py-2 text-red-500 font-black uppercase tracking-widest text-[8px] hover:underline"
+                                      >
+                                          Exit Arena
+                                      </button>
+                                  </div>
+                              </motion.div>
+                          </motion.div>
+                      )}
+                  </AnimatePresence>
+                </div>
+              )}
+      
+              {/* Results State */}
+              <AnimatePresence>
+                  {gameState === 'ended' && finalResult && (
+                  <motion.div initial={{opacity:0}} animate={{opacity:1}} className="fixed inset-0 bg-black/90 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+                      <motion.div initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} className="bg-[#1a2c38] border-4 border-[#3bc117] p-12 rounded-[4rem] text-center max-w-lg w-full shadow-[0_0_150px_rgba(59,193,23,0.2)]">
+                          <Trophy className="w-20 h-20 text-[#3bc117] mx-auto mb-6 drop-shadow-[0_0_20px_rgba(59,193,23,0.5)]" />
+                          <h2 className="text-5xl font-black uppercase tracking-tighter mb-2 italic">Extraction Complete</h2>
+                          <div className="text-6xl font-black text-white mb-8">{finalResult.reward.toFixed(2)} <span className="text-[#3bc117] text-2xl">TRX</span></div>
+                          
+                          <div className="grid grid-cols-2 gap-4 mb-10">
+                              <div className="bg-black/20 p-6 rounded-3xl border border-gray-800">
+                                  <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Final Score</p>
+                                  <p className="text-2xl font-black text-white">{finalResult.score}</p>
+                              </div>
+                              <div className="bg-black/20 p-6 rounded-3xl border border-gray-800">
+                                  <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Arena Balance</p>
+                                  <p className="text-2xl font-black text-[#3bc117]">{finalResult.newBalance.toFixed(2)}</p>
+                              </div>
+                          </div>
+      
+                          <button 
+                              onClick={() => setGameState('lobby')}
+                              className="w-full py-6 bg-[#3bc117] hover:bg-[#45d61d] text-black font-black rounded-2xl uppercase tracking-[0.2em] transition-all shadow-xl shadow-[#3bc117]/20 active:scale-95"
+                          >
+                              Return to Briefing
+                          </button>
+                      </motion.div>
+                  </motion.div>
+                  )}
+              </AnimatePresence>
+      
+              {/* Orientation Warning Overlay */}
+              <AnimatePresence>
+                  {!isLandscape && gameState === 'playing' && (
+                      <motion.div 
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="fixed inset-0 z-[300] bg-[#0d1117] flex flex-col items-center justify-center p-10 text-center"
+                      >
+                          <RotateCw className="w-16 h-16 text-[#3bc117] animate-spin mb-6" />
+                          <h2 className="text-2xl font-black uppercase tracking-tighter mb-2">Landscape Recommended</h2>
+                          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Please rotate your device for the best archery experience</p>
+                      </motion.div>
+                  )}
+              </AnimatePresence>
+            </div>
+          </div>
+        );
       };
-      window.addEventListener('keydown', handleGlobalKeyDown);
-      return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [gameState]);
-
-  return (
-    <div className="min-h-screen bg-[#0d1117] text-white p-4 font-sans select-none relative">
-      <style>{`
-        @media (max-width: 768px) {
-          .game-hud { font-size: 0.7rem; gap: 0.5rem !important; padding: 0.5rem !important; }
-          .hud-item { padding: 0.5rem !important; border-radius: 1rem !important; min-width: 60px; }
-          .hud-value { font-size: 1.25rem !important; line-height: 1 !important; }
-          .hud-label { font-size: 7px !important; }
-          .zoom-bar { scale: 0.75; right: 0.5rem !important; }
-          .action-buttons { bottom: 1.5rem !important; left: 1rem !important; gap: 1rem !important; }
-          .scope-btn { width: 3.5rem !important; height: 3.5rem !important; font-size: 8px !important; }
-          .joystick-container { scale: 0.8; transform-origin: bottom left; }
-          .extract-btn { padding: 0.5rem 1rem !important; font-size: 8px !important; }
-        }
-      `}</style>
-      {/* Top Navigation Overlay */}
-      {gameState !== 'playing' && (
-        <div className="absolute top-6 left-0 right-0 flex justify-center z-[60]">
-            <div className="flex bg-[#0f212e]/80 backdrop-blur-xl border border-gray-800 p-2 rounded-2xl gap-2 shadow-2xl">
-                <button onClick={() => navigate('/')} className="flex items-center gap-2 px-6 py-3 rounded-xl hover:bg-[#3bc117]/10 transition-all group">
-                    <Home className="w-4 h-4 text-gray-400 group-hover:text-[#3bc117]" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-white">Home</span>
-                </button>
-                <button onClick={() => navigate('/store')} className="flex items-center gap-2 px-6 py-3 rounded-xl hover:bg-[#3bc117]/10 transition-all group">
-                    <ShoppingBag className="w-4 h-4 text-gray-400 group-hover:text-[#3bc117]" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-white">Armory</span>
-                </button>
-                <button onClick={() => navigate('/profile')} className="flex items-center gap-2 px-6 py-3 rounded-xl hover:bg-[#3bc117]/10 transition-all group">
-                    <UserIcon className="w-4 h-4 text-gray-400 group-hover:text-[#3bc117]" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-white">Profile</span>
-                </button>
-            </div>
-        </div>
-      )}
-
-      <div className="max-w-6xl mx-auto pt-20">
-        
-        {/* Lobby State */}
-        {gameState === 'lobby' && (
-          <div className="flex flex-col items-center justify-center py-6 md:py-12">
-            <motion.div initial={{opacity:0}} animate={{opacity:1}} className="text-center space-y-8">
-                <div className="relative inline-block">
-                    <div className="w-24 h-24 bg-[#3bc117]/10 rounded-full flex items-center justify-center mx-auto border border-[#3bc117]/50 shadow-[0_0_50px_rgba(59,193,23,0.3)]">
-                        <Target className="w-12 h-12 text-[#3bc117]" />
-                    </div>
-                </div>
-
-                <div>
-                    <h1 className="text-4xl md:text-6xl font-black italic tracking-tighter uppercase">GameX <span className="text-[#3bc117]">Sniper 3D</span></h1>
-                    <p className="text-gray-400 font-bold tracking-[0.3em] text-[10px] md:text-xs mt-2 uppercase">Elite Archery Arena</p>
-                </div>
-
-                {/* Level Selection */}
-                <div className="flex flex-col items-center gap-4">
-                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Select Arena Scene</p>
-                    <div className="flex gap-2 p-2 bg-[#1a2c38] rounded-2xl border border-gray-800">
-                        {[1, 2, 3, 4].map(lvl => (
-                            <button
-                                key={lvl}
-                                onClick={() => setSelectedLevel(lvl)}
-                                className={`w-12 h-12 rounded-xl font-black transition-all ${selectedLevel === lvl ? 'bg-[#3bc117] text-black shadow-[0_0_20px_rgba(59,193,23,0.4)] scale-110' : 'bg-black/40 text-gray-400 hover:text-white'}`}
-                            >
-                                {lvl}
-                            </button>
-                        ))}
-                    </div>
-                    <p className="text-[8px] font-black text-[#3bc117] uppercase italic">
-                        {selectedLevel === 1 && "Meadow Fields"}
-                        {selectedLevel === 2 && "Foggy Hills"}
-                        {selectedLevel === 3 && "Midnight Hunt"}
-                        {selectedLevel === 4 && "Rainbow Valley"}
-                    </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl mx-auto">
-                    {/* Detailed Wallet Display */}
-                    <div className="bg-[#1a2c38] border border-gray-800 rounded-3xl p-6 text-left shadow-2xl">
-                        <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-3">
-                                <Coins className="w-6 h-6 text-[#3bc117]" />
-                                <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 font-sans">Elite Wallet</h3>
-                            </div>
-                            <Link to="/wallet" className="text-[10px] font-black text-[#3bc117] hover:underline uppercase tracking-wider">Deposit</Link>
-                        </div>
-                        
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center p-4 bg-black/30 rounded-2xl border border-white/5">
-                                <div>
-                                    <p className="text-[8px] font-black text-gray-500 uppercase tracking-tighter mb-1">Available Balance</p>
-                                    <p className="text-2xl font-black text-white">{wallet.mainBalance.toFixed(2)} <span className="text-xs text-[#3bc117]">TRX</span></p>
-                                </div>
-                                <Trophy className="w-8 h-8 text-[#3bc117]/20" />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="p-3 bg-black/20 rounded-xl border border-white/5">
-                                    <p className="text-[8px] font-black text-gray-500 uppercase mb-1">Winnings</p>
-                                    <p className="text-sm font-black text-[#3bc117]">{wallet.totalWon.toFixed(1)}</p>
-                                </div>
-                                <div className="p-3 bg-black/20 rounded-xl border border-white/5">
-                                    <p className="text-[8px] font-black text-gray-500 uppercase mb-1">Spent</p>
-                                    <p className="text-sm font-black text-red-500">{wallet.totalSpent.toFixed(1)}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Arsenal & Refill */}
-                    <div className="bg-[#1a2c38] border border-gray-800 rounded-3xl p-6 text-left shadow-2xl">
-                        <div className="flex items-center gap-3 mb-6">
-                            <Zap className="w-6 h-6 text-orange-500" />
-                            <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 font-sans">Current Ammo</h3>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                            {['arrow', 'pellet'].map(type => {
-                                const count = inventory.items?.find(i => i.itemKey === type)?.amount || 0;
-                                return (
-                                    <div key={type} className="bg-black/30 p-4 rounded-2xl border border-white/5 text-center relative overflow-hidden group">
-                                        <div className="absolute top-0 right-0 p-1">
-                                            <div className={`w-1.5 h-1.5 rounded-full ${count > 0 ? 'bg-[#3bc117] animate-pulse' : 'bg-red-500'}`}></div>
-                                        </div>
-                                        <p className="text-[10px] font-black text-gray-500 uppercase mb-1 font-sans">{type}s</p>
-                                        <p className="text-2xl font-black text-white">{count}</p>
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <button 
-                                onClick={() => handleBuyAmmo('arrow')}
-                                disabled={buyingAmmo || wallet.mainBalance < 5}
-                                className="relative py-4 bg-[#3bc117]/10 hover:bg-[#3bc117]/20 border border-[#3bc117]/20 rounded-2xl transition-all group overflow-hidden"
-                            >
-                                <div className="relative z-10 text-center">
-                                    <p className="text-[8px] font-black text-[#3bc117] uppercase mb-1 font-sans">Add 50x Arrows</p>
-                                    <p className="text-xs font-black text-white">5 TRX</p>
-                                </div>
-                                <motion.div className="absolute inset-0 bg-[#3bc117]/5 -translate-x-full group-hover:translate-x-0 transition-transform duration-500" />
-                            </button>
-                            <button 
-                                onClick={() => handleBuyAmmo('pellet')}
-                                disabled={buyingAmmo || wallet.mainBalance < 5}
-                                className="relative py-4 bg-[#3bc117]/10 hover:bg-[#3bc117]/20 border border-[#3bc117]/20 rounded-2xl transition-all group overflow-hidden"
-                            >
-                                <div className="relative z-10 text-center">
-                                    <p className="text-[8px] font-black text-[#3bc117] uppercase mb-1 font-sans">Add 100x Pellets</p>
-                                    <p className="text-xs font-black text-white">5 TRX</p>
-                                </div>
-                                <motion.div className="absolute inset-0 bg-[#3bc117]/5 -translate-x-full group-hover:translate-x-0 transition-transform duration-500" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <AnimatePresence>
-                    {purchaseSuccess && (
-                        <motion.div 
-                            initial={{ opacity: 0, y: 20, scale: 0.8 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, scale: 1.1 }}
-                            className="flex items-center justify-center gap-2 text-[#3bc117] font-black uppercase text-xs tracking-widest bg-[#3bc117]/10 p-4 rounded-2xl border border-[#3bc117]/30 shadow-[0_0_30px_rgba(59,193,23,0.2)] max-w-sm mx-auto"
-                        >
-                            <ShieldCheck className="w-5 h-5" /> {purchaseSuccess}
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
-                <button 
-                    onClick={startNewMatch}
-                    disabled={loading}
-                    className="bg-[#3bc117] hover:bg-[#32a814] text-black text-lg md:text-xl font-black py-4 px-10 md:py-6 md:px-16 rounded-full transition-all hover:scale-105 shadow-[0_0_30px_rgba(59,193,23,0.4)]"
-                >
-                    {loading ? 'INITIALIZING...' : 'ENTER HUNT'}
-                </button>
-
-                {error && (
-                    <div className="flex items-center justify-center gap-2 text-red-500 font-black uppercase text-[10px] tracking-widest bg-red-500/10 p-4 rounded-2xl border border-red-500/20">
-                        <AlertCircle className="w-4 h-4" /> {error}
-                    </div>
-                )}
-            </motion.div>
-          </div>
-        )}
-
-        {/* Playing State */}
-        {gameState === 'playing' && (
-          <div className="fixed inset-0 z-[100] bg-black">
-            {/* HUD */}
-            <div className="absolute top-4 left-2 right-2 flex justify-between items-start z-40 pointer-events-none game-hud">
-                <div className="flex gap-1.5 md:gap-4">
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
-                        <p className="text-[6px] md:text-[9px] text-gray-400 font-black uppercase hud-label tracking-tighter">Points</p>
-                        <p className="text-sm md:text-4xl font-black text-[#3bc117] hud-value leading-none">{currentScore}</p>
-                    </div>
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
-                        <p className="text-[6px] md:text-[9px] text-gray-400 font-black uppercase hud-label tracking-tighter">Arrows</p>
-                        <p className="text-sm md:text-4xl font-black text-white hud-value leading-none">{remainingAmmo}</p>
-                    </div>
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center min-w-[80px] md:min-w-[120px] relative overflow-hidden">
-                        {(showReload || isSessionExpired) ? (
-                            <button 
-                                onClick={handleReload}
-                                className="w-full h-full absolute inset-0 bg-red-600/80 hover:bg-red-500 flex flex-col items-center justify-center z-20 animate-pulse transition-colors"
-                            >
-                                <RotateCw className="w-4 h-4 md:w-6 md:h-6 text-white mb-1" />
-                                <span className="text-[8px] md:text-[10px] font-black uppercase text-white tracking-widest">EXTEND</span>
-                                <span className="text-[6px] md:text-[8px] font-bold text-white/80">0.1 TRX</span>
-                            </button>
-                        ) : (
-                            <>
-                                {/* Analog Clock Background Effect */}
-                                <div className="absolute inset-0 opacity-10">
-                                    <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 100 100">
-                                        <circle
-                                            cx="50" cy="50" r="45"
-                                            fill="none"
-                                            stroke="#3bc117"
-                                            strokeWidth="10"
-                                            strokeDasharray="282.7"
-                                            strokeDashoffset={(() => {
-                                                if (!nextChargeTime) return 0;
-                                                const now = Date.now();
-                                                const total = currentIntervalMinutes * 60000;
-                                                const remaining = Math.max(0, nextChargeTime - now);
-                                                return 282.7 * (1 - remaining / total);
-                                            })()}
-                                        />
-                                    </svg>
-                                </div>
-                                
-                                <p className="text-[6px] md:text-[9px] text-orange-500 font-black uppercase hud-label tracking-tighter flex items-center gap-1 z-10">
-                                    <Clock className="w-2 h-2 md:w-3 md:h-3 animate-pulse" />
-                                    Session {autoRechargeEnabled && <span className="text-[#3bc117] ml-1">(AUTO)</span>}
-                                </p>
-                                <p className="text-sm md:text-4xl font-black text-white hud-value leading-none font-mono z-10">
-                                    {timeLeftStr}
-                                </p>
-                            </>
-                        )}
-                    </div>
-                    <div className="bg-black/60 backdrop-blur-xl p-2 md:p-4 rounded-xl md:rounded-2xl border border-white/10 hud-item shadow-2xl flex flex-col items-center justify-center">
-                        <p className="text-[6px] md:text-[9px] text-yellow-500 font-black uppercase hud-label tracking-tighter">Zoom</p>
-                        <p className="text-xs md:text-2xl font-black text-white hud-value leading-none">{Math.round(zoomMultiplier)}x</p>
-                    </div>
-                </div>
-
-                <div className="flex flex-col items-end gap-4 pointer-events-auto">
-                    <div className="flex gap-2 items-center">
-                        {isTracking && (
-                            <button 
-                                onClick={handleSkip}
-                                className="bg-[#3bc117] text-black px-4 py-1.5 md:px-6 md:py-3 rounded-lg md:rounded-xl font-black text-[8px] md:text-xs uppercase tracking-[0.2em] shadow-[0_0_20px_rgba(59,193,23,0.4)] hover:scale-105 active:scale-95 transition-all"
-                            >
-                                Skip
-                            </button>
-                        )}
-                        <button 
-                            onClick={() => handleEndGame()}
-                            className="bg-red-500/20 hover:bg-red-500/40 text-red-500 px-3 py-1.5 md:p-3 rounded-lg md:rounded-xl border border-red-500/30 backdrop-blur-md font-black text-[8px] md:text-xs uppercase tracking-widest shadow-lg extract-btn"
-                        >
-                            Extract
-                        </button>
-                    </div>
-
-                    {/* Vertical Zoom Bar (Below Extract) */}
-                    <AnimatePresence>
-                        {isScoped && (
-                            <motion.div 
-                                initial={{ opacity: 0, y: -20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -20 }}
-                                className="flex flex-col items-center gap-2 z-30 zoom-bar"
-                            >
-                                <div className="bg-black/40 backdrop-blur-md border border-white/10 p-1.5 rounded-xl flex flex-col gap-2 shadow-2xl">
-                                    {[8, 6, 4, 2].map((z, i) => (
-                                        <button
-                                            key={z}
-                                            onClick={() => handleSetZoomIndex(3-i)}
-                                            className={`w-10 h-10 md:w-12 md:h-12 rounded-lg font-black transition-all ${Math.round(zoomMultiplier) === z ? 'bg-[#3bc117] text-black' : 'bg-black/60 text-gray-400 hover:text-white'}`}
-                                        >
-                                            {z}x
-                                        </button>
-                                    ))}
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </div>
-            </div>
-
-            {/* Pro 2D Crosshair (Always Visible when not Scoped) */}
-            {!isScoped && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-40 scale-75 md:scale-100">
-                    <div className="relative flex items-center justify-center">
-                         {/* Circle */}
-                         <div className="w-10 h-10 border border-black/30 rounded-full"></div>
-                         {/* Cross lines */}
-                         <div className="w-[1px] h-6 bg-black absolute opacity-80"></div>
-                         <div className="w-6 h-[1px] bg-black absolute opacity-80"></div>
-                         {/* Center Dot */}
-                         <div className="w-1 h-1 bg-black rounded-full shadow-[0_0_5px_rgba(0,0,0,0.5)]"></div>
-                    </div>
-                </div>
-            )}
-
-            {/* Hit Confirmation Message */}
-            <AnimatePresence>
-                {hitMessage && (
-                    <motion.div 
-                        initial={{ opacity: 0, scale: 0.5, y: -20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 1.2 }}
-                        className="absolute top-1/3 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
-                    >
-                        <div className="bg-[#3bc117] text-black px-8 py-3 rounded-full font-black italic text-xl shadow-[0_0_50px_rgba(59,193,23,0.5)] uppercase tracking-tighter">
-                            {hitMessage}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Vertical Charge Meter (Left) */}
-            <AnimatePresence>
-                {drawPower > 0 && (
-                    <motion.div 
-                        initial={{ opacity: 0, x: -50 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -50 }}
-                        className="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 flex flex-col items-center gap-4 z-30"
-                    >
-                        <div className="h-60 md:h-80 w-4 md:w-6 bg-black/60 rounded-full border border-white/20 p-1 relative overflow-hidden backdrop-blur-md shadow-2xl">
-                            <motion.div 
-                                className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-red-600 via-yellow-500 to-green-400 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
-                                style={{ height: `${drawPower * 100}%` }}
-                                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                            />
-                            {drawPower > 0.95 && (
-                                <motion.div 
-                                    animate={{ opacity: [0.2, 0.8, 0.2] }}
-                                    transition={{ repeat: Infinity, duration: 0.2 }}
-                                    className="absolute inset-0 bg-white"
-                                />
-                            )}
-                        </div>
-                        <div className="text-center">
-                            <p className="text-[8px] md:text-[10px] font-black text-white uppercase tracking-widest">Tension</p>
-                            <p className={`text-xl md:text-2xl font-black italic tracking-tighter ${drawPower > 0.9 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                                {Math.round(drawPower * 100)}%
-                            </p>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Controls Overlay (Bottom Right) */}
-            <div className="absolute bottom-6 right-6 md:bottom-10 md:right-10 z-[60] pointer-events-auto flex items-center gap-4 action-buttons">
-                {/* Inventory Toggle (Symbol Only) */}
-                <button 
-                    onClick={() => setIsInventoryOpen(!isInventoryOpen)}
-                    className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-black/20 backdrop-blur-md border border-white/10 flex items-center justify-center shadow-2xl hover:bg-white/10 transition-all active:scale-90"
-                >
-                    <ShoppingBag className="w-6 h-6 md:w-8 md:h-8 text-[#3bc117]" />
-                </button>
-
-                {/* Scope Toggle (Transparent Styled) */}
-                {!isTracking && (
-                    <button 
-                        onClick={handleToggleScope}
-                        className={`w-14 h-14 md:w-20 md:h-20 rounded-full border-2 backdrop-blur-sm shadow-2xl flex items-center justify-center font-black text-[8px] md:text-[10px] uppercase tracking-widest transition-all scope-btn ${isScoped ? 'bg-[#3bc117]/20 border-[#3bc117] text-[#3bc117]' : 'bg-white/5 border-white/20 text-white'}`}
-                    >
-                        {isScoped ? 'Unscope' : 'Scope'}
-                    </button>
-                )}
-            </div>
-
-            {/* Inventory Drawer */}
-            <AnimatePresence>
-                {isInventoryOpen && (
-                    <motion.div 
-                        initial={{ opacity: 0, y: 100 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 100 }}
-                        className="fixed bottom-24 right-6 md:bottom-32 md:right-10 z-[70] w-72 md:w-96"
-                    >
-                        <div className="bg-[#0f212e]/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-6 shadow-2xl">
-                            <div className="grid grid-cols-2 gap-4">
-                                {['arrow', 'pellet'].map(type => {
-                                    const amount = inventory.items?.find(i => i.itemKey === type)?.amount || 0;
-                                    return (
-                                        <div key={type} className="bg-black/40 border border-gray-800 p-3 rounded-2xl flex flex-col items-center gap-1">
-                                            <Zap className={`w-4 h-4 ${type === 'arrow' ? 'text-yellow-500' : 'text-orange-500'}`} />
-                                            <p className="text-[8px] font-black text-gray-500 uppercase">{type}s</p>
-                                            <p className="text-sm font-black text-white">{amount}</p>
-                                        </div>
-                                    );
-                                })}
-                                <div className="bg-black/40 border border-[#3bc117]/30 p-3 rounded-2xl flex flex-col items-center gap-1 col-span-2">
-                                    <Coins className="w-4 h-4 text-[#3bc117]" />
-                                    <p className="text-[8px] font-black text-gray-500 uppercase">Balance</p>
-                                    <p className="text-sm font-black text-[#3bc117]">{wallet.mainBalance.toFixed(2)} TRX</p>
-                                </div>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Scope UI Overlay (ENHANCED) */}
-            <AnimatePresence>
-            {showScopeUI && (
-                <motion.div 
-                    initial={{opacity: 0}} 
-                    animate={{opacity: 1}} 
-                    exit={{opacity: 0}}
-                    className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center"
-                >
-                     {/* Scope Crosshair Mask - Thinner Borders for better visibility */}
-                    <div className="w-full h-full border-[12vw] md:border-[10vw] border-black rounded-full absolute inset-0 mix-blend-multiply"></div>
-                    
-                    {/* Pro Scoped Reticle (2D) */}
-                    <div className="relative flex items-center justify-center pointer-events-none scale-[1.2] md:scale-[1.5]">
-                        {/* Outer Thick Ring */}
-                        <div className="w-[40vh] h-[40vh] border-[6px] border-[#3bc117] rounded-full shadow-[0_0_20px_rgba(59,193,23,0.5)]"></div>
-                        {/* Middle Tech Ring */}
-                        <div className="absolute w-[35vh] h-[35vh] border-[2px] border-[#3bc117]/40 rounded-full border-dashed animate-[spin_20s_linear_infinite]"></div>
-                        {/* Inner Ring */}
-                        <div className="absolute w-[15vh] h-[15vh] border-[4px] border-[#3bc117]/80 rounded-full"></div>
-                        
-                        {/* Main Thick Cross */}
-                        <div className="absolute w-[45vh] h-[2px] bg-[#3bc117] shadow-[0_0_10px_rgba(59,193,23,0.5)]"></div>
-                        <div className="absolute h-[45vh] w-[2px] bg-[#3bc117] shadow-[0_0_10px_rgba(59,193,23,0.5)]"></div>
-                        
-                        {/* Corner Accents */}
-                        <div className="absolute top-[-2vh] left-[-2vh] w-4 h-4 border-t-4 border-l-4 border-[#3bc117]"></div>
-                        <div className="absolute top-[-2vh] right-[-2vh] w-4 h-4 border-t-4 border-r-4 border-[#3bc117]"></div>
-                        <div className="absolute bottom-[-2vh] left-[-2vh] w-4 h-4 border-b-4 border-l-4 border-[#3bc117]"></div>
-                        <div className="absolute bottom-[-2vh] right-[-2vh] w-4 h-4 border-b-4 border-r-4 border-[#3bc117]"></div>
-
-                        {/* Center Dot */}
-                        <div className="absolute w-2 h-2 bg-red-500 rounded-full shadow-[0_0_15px_red]"></div>
-                    </div>
-
-                    {/* Exit Button Only in Scoped UI */}
-                    <div className="absolute bottom-6 right-20 md:bottom-10 md:right-32 z-[80] pointer-events-auto">
-                        <button 
-                            onClick={handleToggleScope}
-                            className="w-14 h-14 md:w-20 md:h-20 bg-red-500/20 backdrop-blur-md border-2 border-red-500/50 rounded-full flex items-center justify-center font-black text-[8px] md:text-[10px] text-red-500 active:scale-90 transition-all shadow-2xl"
-                        >
-                            EXIT
-                        </button>
-                    </div>
-                </motion.div>
-            )}
-            </AnimatePresence>
-            
-            {/* Optimized Loading Overlay */}
-            <AnimatePresence>
-                {loading && (
-                    <motion.div 
-                        initial={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[200] bg-[#0d1117] flex flex-col items-center justify-center"
-                    >
-                        <div className="w-64 h-1 bg-gray-800 rounded-full overflow-hidden mb-4">
-                            <motion.div 
-                                className="h-full bg-[#3bc117]"
-                                initial={{ width: "0%" }}
-                                animate={{ width: "100%" }}
-                                transition={{ duration: 2, ease: "easeInOut" }}
-                            />
-                        </div>
-                        <p className="text-[#3bc117] font-black text-[10px] tracking-[0.3em] animate-pulse">OPTIMIZING ASSETS...</p>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Game Container */}
-            <div 
-                ref={gameContainerRef} 
-                className="w-screen h-screen bg-black overflow-hidden shadow-2xl relative cursor-crosshair touch-none"
-            >
-                {/* Instruction Overlay */}
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/50 text-[10px] font-black pointer-events-none text-center uppercase tracking-widest bg-black/20 px-6 py-2 rounded-full backdrop-blur-sm">
-                    DRAG LEFT TO DRAW • RELEASE TO HOLD • DRAG RIGHT TO AIM • TAP LEFT TO SHOOT
-                </div>
-            </div>
-
-            {/* Auto-Recharge / Extension Modal */}
-            <AnimatePresence>
-                {showAutoRechargeModal && (
-                    <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
-                    >
-                        <motion.div 
-                            initial={{ scale: 0.9, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            className="bg-[#1a2c38] border-2 border-[#3bc117] p-8 rounded-[2rem] text-center max-w-sm w-full shadow-2xl"
-                        >
-                            <Clock className="w-12 h-12 text-[#3bc117] mx-auto mb-4" />
-                            <h3 className="text-2xl font-black uppercase tracking-tighter text-white mb-2">Session Expired</h3>
-                            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-6 leading-relaxed">
-                                Extend your hunt for <span className="text-[#3bc117]">0.1 TRX</span>?<br/>
-                                <span className="text-[10px] text-orange-500 italic">Next interval: {currentIntervalMinutes + 1} minutes</span>
-                            </p>
-
-                            <div className="space-y-4">
-                                <button 
-                                    onClick={() => handleConfirmExtension(true)}
-                                    className="w-full py-4 bg-[#3bc117] hover:bg-[#45d61d] text-black font-black rounded-xl uppercase tracking-widest transition-all shadow-lg active:scale-95 text-xs"
-                                >
-                                    Enable Auto-Recharge
-                                </button>
-                                <button 
-                                    onClick={() => handleConfirmExtension(false)}
-                                    className="w-full py-4 bg-white/5 hover:bg-white/10 text-white font-black rounded-xl uppercase tracking-widest transition-all border border-white/10 active:scale-95 text-[10px]"
-                                >
-                                    One-Time Extend
-                                </button>
-                                <button 
-                                    onClick={() => handleEndGame()}
-                                    className="w-full py-2 text-red-500 font-black uppercase tracking-widest text-[8px] hover:underline"
-                                >
-                                    Exit Arena
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-          </div>
-        )}
-
-        {/* Results State */}
-        <AnimatePresence>
-            {gameState === 'ended' && finalResult && (
-            <motion.div initial={{opacity:0}} animate={{opacity:1}} className="fixed inset-0 bg-black/90 backdrop-blur-xl z-50 flex items-center justify-center p-4">
-                <motion.div initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} className="bg-[#1a2c38] border-4 border-[#3bc117] p-12 rounded-[4rem] text-center max-w-lg w-full shadow-[0_0_150px_rgba(59,193,23,0.2)]">
-                    <Trophy className="w-20 h-20 text-[#3bc117] mx-auto mb-6 drop-shadow-[0_0_20px_rgba(59,193,23,0.5)]" />
-                    <h2 className="text-5xl font-black uppercase tracking-tighter mb-2 italic">Extraction Complete</h2>
-                    <div className="text-6xl font-black text-white mb-8">{finalResult.reward.toFixed(2)} <span className="text-[#3bc117] text-2xl">TRX</span></div>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-10">
-                        <div className="bg-black/20 p-6 rounded-3xl border border-gray-800">
-                            <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Final Score</p>
-                            <p className="text-2xl font-black text-white">{finalResult.score}</p>
-                        </div>
-                        <div className="bg-black/20 p-6 rounded-3xl border border-gray-800">
-                            <p className="text-[10px] font-black text-gray-500 uppercase mb-1">Arena Balance</p>
-                            <p className="text-2xl font-black text-[#3bc117]">{finalResult.newBalance.toFixed(2)}</p>
-                        </div>
-                    </div>
-
-                    <button 
-                        onClick={() => setGameState('lobby')}
-                        className="w-full py-6 bg-[#3bc117] hover:bg-[#45d61d] text-black font-black rounded-2xl uppercase tracking-[0.2em] transition-all shadow-xl shadow-[#3bc117]/20 active:scale-95"
-                    >
-                        Return to Briefing
-                    </button>
-                </motion.div>
-            </motion.div>
-            )}
-        </AnimatePresence>
-
-        {/* Orientation Warning Overlay */}
-        <AnimatePresence>
-            {!isLandscape && gameState === 'playing' && (
-                <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[300] bg-[#0d1117] flex flex-col items-center justify-center p-10 text-center"
-                >
-                    <RotateCw className="w-16 h-16 text-[#3bc117] animate-spin mb-6" />
-                    <h2 className="text-2xl font-black uppercase tracking-tighter mb-2">Landscape Recommended</h2>
-                    <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Please rotate your device for the best archery experience</p>
-                </motion.div>
-            )}
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-};
-
-export default BirdShooting;
+      
+      export default BirdShooting;

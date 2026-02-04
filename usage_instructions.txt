@@ -1,7 +1,0 @@
-I have prepared a comprehensive prompt that you can use with your local `deepseek-coder:6.7b` Ollama-based AI. This prompt provides the AI with detailed context about your Game/GameX project, including its vision, technical architecture, and coding conventions.
-
-You can find the prompt content in the file `deepseek_coder_prompt.txt` located in your current working directory.
-
-To use this, you would typically feed the content of this file as a system instruction or a very detailed initial prompt to your Ollama interface when interacting with `deepseek-coder:6.7b`. Then, you can follow up with your specific coding requests related to the project.
-
-For example, when you launch your Ollama chat interface, you might paste the content of `deepseek_coder_prompt.txt` first, and then ask your coding question like: 'Implement the `redeemCode` function in `server/routes/redeem.js` according to the project's architecture.'
